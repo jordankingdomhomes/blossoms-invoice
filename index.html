@@ -6,6 +6,9 @@
 <title>Blossoms by Michele — Invoice Maker</title>
 <link rel="apple-touch-icon" href="logo.png">
 <style>
+  @font-face{font-family:'Lexend Exa'; font-weight:400; font-display:swap; src:url('lexendexa400.ttf') format('truetype');}
+  @font-face{font-family:'Lexend Exa'; font-weight:700; font-display:swap; src:url('lexendexa700.ttf') format('truetype');}
+  @font-face{font-family:'Great Vibes'; font-weight:400; font-display:swap; src:url('greatvibes.ttf') format('truetype');}
   :root{
     --bg:#fdf8f4; --card:#ffffff; --ink:#40372f; --muted:#94897f;
     --green:#5f7355; --pink:#e79aa2; --pink-deep:#d47f8b; --pink-soft:#f7e7ea;
@@ -68,6 +71,23 @@
   .todayBtn{flex:0 0 auto; padding:14px 22px}
   .dateEcho{margin-top:10px; color:var(--green); font-weight:700; font-size:18px}
 
+  /* Delivery / Pickup toggle */
+  .segwrap{display:flex; gap:10px; margin-bottom:16px}
+  .seg{
+    flex:1; padding:16px 8px; border:2px solid var(--line); background:#fff; border-radius:16px;
+    font:inherit; font-weight:800; font-size:19px; color:var(--muted); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .seg.active{border-color:var(--pink); background:var(--pink-soft); color:var(--pink-deep)}
+  .seg:active{transform:translateY(1px)}
+  .pickupBox{
+    display:flex; gap:16px; align-items:center; background:#f3f7f0; border:2px solid #e0e9d7;
+    border-radius:16px; padding:18px 20px;
+  }
+  .pickupBox .pu-ic{font-size:32px; line-height:1}
+  .pickupBox .pu-t{font-weight:800; color:var(--green); font-size:16px; margin-bottom:3px; letter-spacing:.3px}
+  .pickupBox .pu-a{font-size:20px; font-weight:700; color:var(--ink); line-height:1.35}
+
   /* Address autocomplete */
   .ac{position:relative}
   .aclist{
@@ -120,7 +140,8 @@
   /* Preview */
   .previewCard{padding:0; overflow:hidden}
   .previewHead{padding:14px 18px; font-weight:800; color:var(--green); border-bottom:1px solid var(--line); font-size:18px}
-  .paper{background:#fff; padding:26px 26px 30px; font-size:13px; color:#2f2a25}
+  .paper{background:#fff; padding:26px 26px 30px; font-size:12px; color:#2f2a25;
+    font-family:'Lexend Exa',-apple-system,sans-serif; letter-spacing:.2px}
   .paper .plogo{width:120px; display:block; margin:0 auto 14px}
   .pmeta{display:flex; justify-content:space-between; font-weight:700; margin-bottom:14px; gap:10px; flex-wrap:wrap}
   .ptable{border:1px solid #e6ddd4; border-radius:2px; padding:14px 16px}
@@ -134,7 +155,7 @@
   .pfoot h4{margin:0 0 6px; text-decoration:underline; font-size:12px}
   .pfoot .blk{max-width:58%}
   .pfoot .sig{text-align:right; margin-left:auto}
-  .pfoot .sig .ty{font-family:"Snell Roundhand","Brush Script MT",cursive; font-size:26px}
+  .pfoot .sig .ty{font-family:'Great Vibes',"Snell Roundhand",cursive; font-size:34px; line-height:1; color:#3a332d}
   .muted{color:#8a807760}
 
   /* Sticky action bar */
@@ -192,12 +213,25 @@
     <!-- 3. ADDRESS -->
     <div class="card">
       <div class="steprow"><div class="num">3</div><h2>Where is it going?</h2></div>
-      <div class="ac">
-        <input type="text" id="addrSearch" placeholder="Start typing the address…" autocomplete="off">
-        <div class="aclist" id="acList"></div>
+      <div class="segwrap">
+        <button type="button" class="seg active" id="segDelivery">🚚 Delivery</button>
+        <button type="button" class="seg" id="segPickup">🛍️ Pick-Up</button>
       </div>
-      <div class="fieldgap">
-        <textarea id="addrFull" placeholder="Delivery address will appear here (you can also type it in)"></textarea>
+      <div id="deliveryFields">
+        <div class="ac">
+          <input type="text" id="addrSearch" placeholder="Start typing the address…" autocomplete="off">
+          <div class="aclist" id="acList"></div>
+        </div>
+        <div class="fieldgap">
+          <textarea id="addrFull" placeholder="Delivery address (you can also type it in)"></textarea>
+        </div>
+      </div>
+      <div id="pickupBox" class="pickupBox" style="display:none">
+        <div class="pu-ic">📍</div>
+        <div>
+          <div class="pu-t">PICK-UP AT THE SHOP</div>
+          <div class="pu-a">12001 Iredell Street<br>Studio City, CA 91604</div>
+        </div>
       </div>
     </div>
 
@@ -285,7 +319,7 @@
         </div>
         <div class="pfoot">
           <div class="blk">
-            <h4>Delivery Details :</h4>
+            <h4 id="pAddrHead">Delivery Details :</h4>
             <div id="pAddr" style="white-space:pre-wrap"></div>
             <h4 style="margin-top:16px">Payment Details :</h4>
             <div id="pPay" style="white-space:pre-wrap"></div>
@@ -309,6 +343,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="jspdf.umd.min.js"></script>
+  <script src="fonts.js"></script>
   <script>
   (function(){
     "use strict";
@@ -324,6 +359,21 @@
       var str = n.toLocaleString("en-US",{minimumFractionDigits:hasCents?2:0, maximumFractionDigits:2});
       return (neg?"-$":"$")+str;
     }
+
+    var SHOP_ADDR="12001 Iredell Street\nStudio City, CA 91604";
+    var mode="delivery";
+    var LA_BIAS={lat:34.14,lon:-118.39}; // Studio City area, biases address search toward LA
+
+    var STATES={"Alabama":"AL","Alaska":"AK","Arizona":"AZ","Arkansas":"AR","California":"CA",
+      "Colorado":"CO","Connecticut":"CT","Delaware":"DE","District of Columbia":"DC","Florida":"FL",
+      "Georgia":"GA","Hawaii":"HI","Idaho":"ID","Illinois":"IL","Indiana":"IN","Iowa":"IA","Kansas":"KS",
+      "Kentucky":"KY","Louisiana":"LA","Maine":"ME","Maryland":"MD","Massachusetts":"MA","Michigan":"MI",
+      "Minnesota":"MN","Mississippi":"MS","Missouri":"MO","Montana":"MT","Nebraska":"NE","Nevada":"NV",
+      "New Hampshire":"NH","New Jersey":"NJ","New Mexico":"NM","New York":"NY","North Carolina":"NC",
+      "North Dakota":"ND","Ohio":"OH","Oklahoma":"OK","Oregon":"OR","Pennsylvania":"PA","Rhode Island":"RI",
+      "South Carolina":"SC","South Dakota":"SD","Tennessee":"TN","Texas":"TX","Utah":"UT","Vermont":"VT",
+      "Virginia":"VA","Washington":"WA","West Virginia":"WV","Wisconsin":"WI","Wyoming":"WY"};
+    function stateAbbr(s){ return s?(STATES[s]||s):""; }
 
     /* ---------- DATE ---------- */
     var dateEl=$("deliveryDate"), dateEcho=$("dateEcho");
@@ -377,6 +427,11 @@
     var addrSearch=$("addrSearch"), acList=$("acList"), addrFull=$("addrFull");
     var acTimer=null, acItems=[], acHl=-1;
     function hideAc(){acList.classList.remove("show"); acList.innerHTML=""; acItems=[]; acHl=-1;}
+    function showNoMatch(){
+      acItems=[]; acHl=-1;
+      acList.innerHTML='<div class="acnote" style="padding:14px 14px">No match found — just type the address in the box below 👇</div>';
+      acList.classList.add("show");
+    }
     function chooseAc(i){
       var it=acItems[i]; if(!it) return;
       addrFull.value = it.line2 ? (it.line1+"\n"+it.line2) : it.line1;
@@ -397,17 +452,39 @@
       acList.classList.add("show");
     }
     function doSearch(q){
-      fetch("https://photon.komoot.io/api/?q="+encodeURIComponent(q)+"&limit=5&lang=en")
+      var hm=q.match(/^\s*(\d+)\s+/); var typedNum=hm?hm[1]:"";
+      var url="https://photon.komoot.io/api/?q="+encodeURIComponent(q)+
+              "&limit=10&lang=en&lat="+LA_BIAS.lat+"&lon="+LA_BIAS.lon+"&location_bias_scale=0.4";
+      fetch(url)
         .then(function(r){return r.json();})
         .then(function(j){
-          acItems=(j.features||[]).map(function(f){
+          var GEO={city:1,state:1,country:1,county:1,district:1,locality:1,region:1};
+          var mapped=(j.features||[]).map(function(f){
             var p=f.properties||{};
-            var line1=[p.housenumber,p.street||p.name].filter(Boolean).join(" ");
-            var line2=[(p.city||p.town||p.village||p.county), p.state, p.postcode].filter(Boolean).join(", ");
-            if(!line1) line1=p.name||line2;
-            return {line1:line1, line2:line2, label:[line1,line2].filter(Boolean).join(", ")};
-          }).filter(function(x){return x.line1;});
-          renderAc();
+            var hn=p.housenumber||"";
+            var isStreet=(p.type==="street"||p.osm_key==="highway");
+            var isGeo=!!GEO[p.type];
+            var namePart=p.street||p.name||"";
+            // Photon usually has the street but not the exact house number:
+            // if the user typed a number and this is a street, splice it on.
+            if(!hn && typedNum && isStreet) hn=typedNum;
+            var line1=[hn,namePart].filter(Boolean).join(" ").trim();
+            var city=p.city||p.town||p.village||p.county||"";
+            var st=stateAbbr(p.state);
+            var line2=[city,st,p.postcode].filter(Boolean).join(", ");
+            return {line1:line1, line2:line2, cc:(p.countrycode||"").toUpperCase(),
+                    label:[line1,line2].filter(Boolean).join(", "),
+                    drop:(typedNum && isGeo && !hn)}; // hide bare city/region when a house # was typed
+          }).filter(function(x){return x.line1 && !x.drop;});
+          // US only — never show foreign matches (Photon sometimes guesses wildly).
+          var us=mapped.filter(function(x){return x.cc==="US";});
+          var seen={}; acItems=[];
+          us.forEach(function(x){
+            var k=x.label.toLowerCase();
+            if(!seen[k]){ seen[k]=1; acItems.push({line1:x.line1,line2:x.line2,label:x.label}); }
+          });
+          acItems=acItems.slice(0,6);
+          if(acItems.length) renderAc(); else showNoMatch();
         })
         .catch(function(){ hideAc(); });
     }
@@ -429,6 +506,18 @@
     addrSearch.addEventListener("blur",function(){ setTimeout(hideAc,150); });
     addrFull.addEventListener("input",render);
 
+    /* ---------- DELIVERY / PICK-UP TOGGLE ---------- */
+    var segD=$("segDelivery"), segP=$("segPickup"), delF=$("deliveryFields"), puBox=$("pickupBox");
+    function setMode(m){
+      mode=m; var isDel=(m==="delivery");
+      segD.classList.toggle("active",isDel); segP.classList.toggle("active",!isDel);
+      delF.style.display=isDel?"":"none";
+      puBox.style.display=isDel?"none":"flex";
+      hideAc(); render();
+    }
+    segD.addEventListener("click",function(){setMode("delivery");});
+    segP.addEventListener("click",function(){setMode("pickup");});
+
     /* ---------- prefilled payment/contact inputs ---------- */
     ["payDepTerms","payRemainder","payVenmo","payZelle","payCard","billTo","sigName","sigEmail","sigPhone"]
       .forEach(function(id){ $(id).addEventListener("input",render); });
@@ -445,7 +534,8 @@
       return {
         date:fmtDate(dateEl.value),
         billTo:$("billTo").value.trim(),
-        addr:addrFull.value.trim(),
+        addr: mode==="pickup" ? SHOP_ADDR : addrFull.value.trim(),
+        isPickup: mode==="pickup",
         items:items, total:total,
         deposit:dep, hasDeposit: $("deposit").value.trim()!=="" && dep>0,
         balance: total-dep,
@@ -459,7 +549,7 @@
     /* ---------- LIVE PREVIEW ---------- */
     function render(){
       var d=gather();
-      $("pDate").textContent = "Delivery Date: "+(d.date||"—");
+      $("pDate").textContent = (d.isPickup?"Pick-Up Date: ":"Delivery Date: ")+(d.date||"—");
       $("pBill").textContent = "Billed To: "+(d.billTo||"—");
       $("totalVal").textContent = money(d.total);
       $("pTotal").textContent = money(d.total);
@@ -481,6 +571,7 @@
         $("balLine").style.display="flex"; $("balVal").textContent=money(d.balance);
       } else { db.innerHTML=""; $("balLine").style.display="none"; }
 
+      $("pAddrHead").textContent = d.isPickup ? "Pick-Up Location :" : "Delivery Details :";
       $("pAddr").textContent = d.addr || "—";
       $("pPay").textContent = d.payment.join("\n");
       $("pSigName").textContent=d.sigName;
@@ -500,27 +591,29 @@
       // logo
       var img=$("logoImg");
       try{ doc.addImage(img, "PNG", (W-118)/2, 40, 118, 118); }catch(e){}
-      var y=182;
+      var y=184;
+      var BODY="LexendExa";
+      function F(style,size){ doc.setFont(BODY,style); doc.setFontSize(size); }
 
-      // meta row
-      doc.setTextColor(ink[0],ink[1],ink[2]); doc.setFont("helvetica","bold"); doc.setFontSize(11.5);
-      doc.text("Delivery Date: "+(d.date||""), L, y);
+      // meta row (Lexend Exa, like the original)
+      doc.setTextColor(ink[0],ink[1],ink[2]); F("normal",10.5);
+      doc.text((d.isPickup?"Pick-Up Date: ":"Delivery Date: ")+(d.date||""), L, y);
       doc.text("Billed To: "+(d.billTo||""), R, y, {align:"right"});
 
-      // table box top
-      var boxTop=y+16;
-      var tx=L+18, priceX=R-18;
-      var descRight=priceX-70; // wrap width for description
+      // table box geometry
+      var boxTop=y+18;
+      var tx=L+20, priceX=R-16;
+      var valX=priceX-74;          // left edge of the price column (values left-aligned here)
+      var descWrap=valX-16-tx;     // wrap width for the description column
 
       // header
-      var hy=boxTop+26;
-      doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(grey[0],grey[1],grey[2]);
-      doc.setCharSpace(2);
+      var hy=boxTop+28;
+      F("bold",8.5); doc.setTextColor(grey[0],grey[1],grey[2]); doc.setCharSpace(2.5);
       doc.text("DESCRIPTION", tx, hy);
-      doc.text("PRICE", descRight+30, hy);
+      doc.text("PRICE", valX, hy);
       doc.setCharSpace(0);
       doc.setDrawColor(soft[0],soft[1],soft[2]); doc.setLineWidth(0.8);
-      doc.line(tx, hy+8, priceX, hy+8);
+      doc.line(tx, hy+9, priceX, hy+9);
 
       // items
       var iy=hy+30;
@@ -528,42 +621,38 @@
       d.items.forEach(function(it){
         var lines=(it.desc||"").split("\n");
         var head=lines.shift()||"";
-        // price aligned to first line
-        if(it.hasPrice){ doc.setFont("helvetica","normal"); doc.setFontSize(11.5); doc.text(money(it.price), descRight+30, iy); }
-        // head (bold)
-        doc.setFont("helvetica","bold"); doc.setFontSize(11.5);
-        var hw=doc.splitTextToSize(head, descRight-tx);
+        if(it.hasPrice){ F("normal",10.5); doc.text(money(it.price), valX, iy); }
+        F("bold",10.5);
+        var hw=doc.splitTextToSize(head, descWrap);
         doc.text(hw, tx, iy);
-        var ly=iy + hw.length*15;
-        // rest (normal)
-        doc.setFont("helvetica","normal"); doc.setFontSize(11);
+        var ly=iy + hw.length*14;
+        F("normal",9);
         lines.forEach(function(ln){
           if(ln.trim()===""){ ly+=6; return; }
-          var w=doc.splitTextToSize(ln, descRight-tx);
-          doc.text(w, tx, ly); ly+=w.length*14;
+          var w=doc.splitTextToSize(ln, descWrap);
+          doc.text(w, tx, ly); ly+=w.length*12.5;
         });
-        iy = ly + 16;
+        iy = ly + 15;
       });
 
       // total
       iy += 2;
-      doc.setDrawColor(soft[0],soft[1],soft[2]); doc.setLineWidth(0.8);
-      doc.setFont("helvetica","bold"); doc.setFontSize(11.5); doc.setTextColor(ink[0],ink[1],ink[2]);
-      doc.setCharSpace(1.5);
-      doc.text("TOTAL :", descRight-4, iy, {align:"right"});
+      F("bold",9.5); doc.setTextColor(ink[0],ink[1],ink[2]); doc.setCharSpace(1.2);
+      doc.text("TOTAL :", valX-12, iy, {align:"right"});
       doc.setCharSpace(0);
-      doc.text(money(d.total), descRight+30, iy);
+      F("normal",10.5); doc.text(money(d.total), valX, iy);
 
       var boxBottom=iy+18;
       // deposit / balance
       if(d.hasDeposit){
-        doc.line(L+18, iy+14, priceX, iy+14);
-        iy+=40; doc.setCharSpace(1.5);
-        doc.text("DEPOSIT PAID :", descRight-4, iy, {align:"right"}); doc.setCharSpace(0);
-        doc.setFont("helvetica","normal"); doc.text(money(d.deposit), descRight+30, iy);
-        iy+=26; doc.setFont("helvetica","bold"); doc.setCharSpace(1.5);
-        doc.text("BALANCE :", descRight-4, iy, {align:"right"}); doc.setCharSpace(0);
-        doc.setFont("helvetica","normal"); doc.text(money(d.balance), descRight+30, iy);
+        doc.setDrawColor(soft[0],soft[1],soft[2]); doc.setLineWidth(0.8);
+        doc.line(tx, iy+14, priceX, iy+14);
+        iy+=42; F("bold",9.5); doc.setCharSpace(1.2);
+        doc.text("DEPOSIT PAID :", valX-12, iy, {align:"right"}); doc.setCharSpace(0);
+        F("normal",10.5); doc.text(money(d.deposit), valX, iy);
+        iy+=26; F("bold",9.5); doc.setCharSpace(1.2);
+        doc.text("BALANCE :", valX-12, iy, {align:"right"}); doc.setCharSpace(0);
+        F("normal",10.5); doc.text(money(d.balance), valX, iy);
         boxBottom=iy+18;
       }
 
@@ -572,36 +661,33 @@
       doc.roundedRect(L, boxTop, cw, boxBottom-boxTop, 4, 4);
 
       // footer
-      var fy=Math.max(boxBottom+50, 600);
-      // left column
-      doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(ink[0],ink[1],ink[2]);
-      doc.text("Delivery Details :", L, fy);
+      var fy=Math.max(boxBottom+52, 596);
+      var addrHead=d.isPickup?"Pick-Up Location :":"Delivery Details :";
+      F("bold",9.5); doc.setTextColor(ink[0],ink[1],ink[2]);
+      doc.text(addrHead, L, fy);
       doc.setLineWidth(0.6); doc.setDrawColor(ink[0],ink[1],ink[2]);
-      doc.line(L, fy+3, L+doc.getTextWidth("Delivery Details :"), fy+3);
-      doc.setFont("helvetica","normal"); doc.setFontSize(10.5);
-      var ay=fy+20;
-      (d.addr||"").split("\n").forEach(function(ln){ doc.text(ln, L, ay); ay+=15; });
+      doc.line(L, fy+4, L+doc.getTextWidth(addrHead), fy+4);
+      F("normal",9); var ay=fy+20;
+      (d.addr||"").split("\n").forEach(function(ln){ doc.text(ln, L, ay); ay+=14; });
 
-      var py=ay+18;
-      doc.setFont("helvetica","bold"); doc.setFontSize(11);
-      doc.text("Payment Details :", L, py);
-      doc.line(L, py+3, L+doc.getTextWidth("Payment Details :"), py+3);
-      doc.setFont("helvetica","normal"); doc.setFontSize(10);
-      var qy=py+18;
+      var py=ay+16;
+      F("bold",9.5); doc.text("Payment Details :", L, py);
+      doc.line(L, py+4, L+doc.getTextWidth("Payment Details :"), py+4);
+      F("normal",8); var qy=py+18;
       d.payment.forEach(function(ln){
         var w=doc.splitTextToSize(ln, 300);
-        doc.text(w, L, qy); qy+=w.length*13.5;
+        doc.text(w, L, qy); qy+=w.length*12;
       });
 
       // right column: signature
       var rx=R;
-      doc.setFont("times","italic"); doc.setFontSize(26); doc.setTextColor(ink[0],ink[1],ink[2]);
-      doc.text("Thank you", rx, fy+6, {align:"right"});
-      doc.setFont("helvetica","bold"); doc.setFontSize(11);
-      doc.text(d.sigName||"", rx, fy+34, {align:"right"});
-      doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(grey[0],grey[1],grey[2]);
-      doc.text(d.sigEmail||"", rx, fy+52, {align:"right"});
-      doc.text(d.sigPhone||"", rx, fy+68, {align:"right"});
+      doc.setFont("GreatVibes","normal"); doc.setFontSize(40); doc.setTextColor(58,51,45);
+      doc.text("Thank you", rx, fy+10, {align:"right"});
+      F("bold",10); doc.setTextColor(ink[0],ink[1],ink[2]);
+      doc.text(d.sigName||"", rx, fy+40, {align:"right"});
+      F("normal",8.5); doc.setTextColor(grey[0],grey[1],grey[2]);
+      doc.text(d.sigEmail||"", rx, fy+56, {align:"right"});
+      doc.text(d.sigPhone||"", rx, fy+70, {align:"right"});
 
       return doc;
     }
