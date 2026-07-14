@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Blossoms by Michele — Invoice Maker</title>
+<link rel="apple-touch-icon" href="logo.png">
+<style>
+  :root{
+    --bg:#fdf8f4; --card:#ffffff; --ink:#40372f; --muted:#94897f;
+    --green:#5f7355; --pink:#e79aa2; --pink-deep:#d47f8b; --pink-soft:#f7e7ea;
+    --line:#ece3da; --shadow:0 6px 22px rgba(120,90,80,.10);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); font-size:19px; line-height:1.45;
+    padding-bottom:120px;
+  }
+  .wrap{max-width:640px; margin:0 auto; padding:0 16px}
+
+  /* Header */
+  header{
+    text-align:center; padding:22px 16px 8px;
+  }
+  header img{width:96px; height:96px; object-fit:contain; display:block; margin:0 auto 6px}
+  header h1{font-size:23px; margin:0; color:var(--green); font-weight:800; letter-spacing:.3px}
+  header p{margin:4px 0 0; color:var(--muted); font-size:17px}
+
+  /* Cards */
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:20px;
+    padding:18px 18px 20px; margin:14px 0; box-shadow:var(--shadow);
+  }
+  .steprow{display:flex; align-items:center; gap:12px; margin-bottom:12px}
+  .num{
+    flex:0 0 auto; width:38px; height:38px; border-radius:50%;
+    background:var(--pink-soft); color:var(--pink-deep); font-weight:800; font-size:20px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .steprow h2{font-size:21px; margin:0; font-weight:800}
+  .hint{color:var(--muted); font-size:16px; margin:-4px 0 12px 50px}
+
+  label{display:block; font-weight:700; margin:0 0 6px; font-size:18px}
+  input,textarea,select{
+    width:100%; font:inherit; font-size:20px; color:var(--ink); background:#fff;
+    border:2px solid var(--line); border-radius:14px; padding:14px 14px; min-height:58px;
+  }
+  textarea{min-height:88px; resize:vertical; line-height:1.4}
+  input:focus,textarea:focus,select:focus{outline:none; border-color:var(--pink)}
+  ::placeholder{color:#c3b8ad}
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    font:inherit; font-weight:800; cursor:pointer; border:none; border-radius:16px;
+    padding:14px 18px; min-height:56px; font-size:19px;
+  }
+  .btn-lite{background:var(--pink-soft); color:var(--pink-deep)}
+  .btn-lite:active{background:#f0d7dc}
+  .btn-ghost{background:#fff; color:var(--green); border:2px solid var(--line)}
+  .btn-add{width:100%; background:var(--pink-soft); color:var(--pink-deep); margin-top:6px}
+  .btn-add:active{background:#f0d7dc}
+
+  /* Date quick row */
+  .dateRow{display:flex; gap:10px; flex-wrap:wrap}
+  .dateRow input[type=date]{flex:1 1 200px}
+  .todayBtn{flex:0 0 auto; padding:14px 22px}
+  .dateEcho{margin-top:10px; color:var(--green); font-weight:700; font-size:18px}
+
+  /* Address autocomplete */
+  .ac{position:relative}
+  .aclist{
+    position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:40;
+    background:#fff; border:2px solid var(--line); border-radius:14px; overflow:hidden;
+    box-shadow:var(--shadow); display:none;
+  }
+  .aclist.show{display:block}
+  .acitem{padding:14px 14px; border-bottom:1px solid var(--line); cursor:pointer; font-size:17px}
+  .acitem:last-child{border-bottom:none}
+  .acitem:active,.acitem.hl{background:var(--pink-soft)}
+  .acitem small{display:block; color:var(--muted); font-size:14px; margin-top:2px}
+  .acnote{color:var(--muted); font-size:14px; padding:8px 4px 0}
+
+  /* Items */
+  .item{border:2px solid var(--line); border-radius:16px; padding:14px; margin:12px 0; position:relative; background:#fffdfb}
+  .item .rm{
+    position:absolute; top:10px; right:10px; width:34px; height:34px; border-radius:50%;
+    border:none; background:#f6eae6; color:#b06a6a; font-size:20px; font-weight:800; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .item .rm:active{background:#efd9d3}
+  .priceWrap{position:relative; margin-top:10px}
+  .priceWrap .dol{position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--muted); font-size:20px}
+  .priceWrap input{padding-left:32px}
+  .itemLbl{font-size:15px; color:var(--muted); font-weight:700; margin-bottom:5px}
+
+  .totalBox{
+    margin-top:14px; background:var(--pink-soft); border-radius:16px; padding:14px 18px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .totalBox .t{font-size:18px; font-weight:700; color:var(--pink-deep)}
+  .totalBox .v{font-size:28px; font-weight:800; color:var(--pink-deep)}
+  .balLine{display:flex; justify-content:space-between; font-size:17px; color:var(--muted); margin-top:8px; padding:0 4px}
+  .balLine b{color:var(--ink)}
+
+  /* Collapsible */
+  details.adv{margin:14px 0}
+  details.adv>summary{
+    list-style:none; cursor:pointer; background:#fff; border:1px solid var(--line);
+    border-radius:20px; padding:16px 18px; font-weight:800; font-size:18px; color:var(--green);
+    box-shadow:var(--shadow); display:flex; align-items:center; gap:10px;
+  }
+  details.adv>summary::-webkit-details-marker{display:none}
+  details.adv>summary .chev{margin-left:auto; transition:transform .2s}
+  details.adv[open]>summary .chev{transform:rotate(180deg)}
+  .advbody{padding:6px 2px 2px}
+  .fieldgap{margin-top:14px}
+
+  /* Preview */
+  .previewCard{padding:0; overflow:hidden}
+  .previewHead{padding:14px 18px; font-weight:800; color:var(--green); border-bottom:1px solid var(--line); font-size:18px}
+  .paper{background:#fff; padding:26px 26px 30px; font-size:13px; color:#2f2a25}
+  .paper .plogo{width:120px; display:block; margin:0 auto 14px}
+  .pmeta{display:flex; justify-content:space-between; font-weight:700; margin-bottom:14px; gap:10px; flex-wrap:wrap}
+  .ptable{border:1px solid #e6ddd4; border-radius:2px; padding:14px 16px}
+  .ptable .ph{display:flex; justify-content:space-between; letter-spacing:2px; font-size:11px; color:#6b625a; border-bottom:1px solid #eee3da; padding-bottom:8px; margin-bottom:10px}
+  .prow{display:flex; justify-content:space-between; gap:14px; margin:10px 0}
+  .prow .d{white-space:pre-wrap}
+  .prow .d b{display:block}
+  .prow .p{white-space:nowrap; font-weight:600}
+  .ptot{display:flex; justify-content:flex-end; gap:26px; letter-spacing:1px; font-weight:700; margin-top:12px; padding-top:6px}
+  .pfoot{display:flex; justify-content:space-between; margin-top:22px; gap:20px; flex-wrap:wrap}
+  .pfoot h4{margin:0 0 6px; text-decoration:underline; font-size:12px}
+  .pfoot .blk{max-width:58%}
+  .pfoot .sig{text-align:right; margin-left:auto}
+  .pfoot .sig .ty{font-family:"Snell Roundhand","Brush Script MT",cursive; font-size:26px}
+  .muted{color:#8a807760}
+
+  /* Sticky action bar */
+  .bar{
+    position:fixed; left:0; right:0; bottom:0; z-index:60;
+    background:linear-gradient(180deg, rgba(253,248,244,0) 0%, var(--bg) 26%);
+    padding:14px 16px calc(16px + env(safe-area-inset-bottom));
+  }
+  .bar .inner{max-width:640px; margin:0 auto}
+  .bigbtn{
+    width:100%; background:var(--pink-deep); color:#fff; font-size:23px; font-weight:800;
+    border:none; border-radius:20px; padding:20px; min-height:70px; cursor:pointer;
+    box-shadow:0 8px 24px rgba(212,127,139,.45); display:flex; align-items:center; justify-content:center; gap:10px;
+  }
+  .bigbtn:active{transform:translateY(1px)}
+  .bigbtn[disabled]{opacity:.55}
+
+  /* Toast */
+  .toast{
+    position:fixed; left:50%; bottom:110px; transform:translateX(-50%);
+    background:#3f4a38; color:#fff; padding:14px 20px; border-radius:14px; font-weight:700;
+    box-shadow:var(--shadow); z-index:80; max-width:88%; text-align:center; font-size:17px;
+    opacity:0; pointer-events:none; transition:opacity .25s, bottom .25s;
+  }
+  .toast.show{opacity:1; bottom:120px}
+</style>
+</head>
+<body>
+  <img id="logoImg" src="logo.png" alt="" crossorigin="anonymous" style="display:none">
+
+  <header>
+    <img src="logo.png" alt="Blossoms by Michele">
+    <h1>Invoice Maker</h1>
+    <p>Fill in the blanks, then tap the pink button.</p>
+  </header>
+
+  <div class="wrap">
+
+    <!-- 1. DATE -->
+    <div class="card">
+      <div class="steprow"><div class="num">1</div><h2>When is it for?</h2></div>
+      <div class="dateRow">
+        <button type="button" class="btn todayBtn btn-lite" id="todayBtn">📅 Today</button>
+        <input type="date" id="deliveryDate">
+      </div>
+      <div class="dateEcho" id="dateEcho"></div>
+    </div>
+
+    <!-- 2. BILL TO -->
+    <div class="card">
+      <div class="steprow"><div class="num">2</div><h2>Who is it for?</h2></div>
+      <input type="text" id="billTo" placeholder="Customer name (e.g. Tim and Coral)">
+    </div>
+
+    <!-- 3. ADDRESS -->
+    <div class="card">
+      <div class="steprow"><div class="num">3</div><h2>Where is it going?</h2></div>
+      <div class="ac">
+        <input type="text" id="addrSearch" placeholder="Start typing the address…" autocomplete="off">
+        <div class="aclist" id="acList"></div>
+      </div>
+      <div class="fieldgap">
+        <textarea id="addrFull" placeholder="Delivery address will appear here (you can also type it in)"></textarea>
+      </div>
+    </div>
+
+    <!-- 4. ITEMS -->
+    <div class="card">
+      <div class="steprow"><div class="num">4</div><h2>What are they buying?</h2></div>
+      <div class="hint" style="margin-left:0">Write anything you want, then the price. It adds up for you.</div>
+      <div id="items"></div>
+      <button type="button" class="btn btn-add" id="addItem">➕ Add another item</button>
+
+      <div class="totalBox"><span class="t">TOTAL</span><span class="v" id="totalVal">$0</span></div>
+
+      <div class="fieldgap">
+        <label for="deposit">Deposit already paid (optional)</label>
+        <div class="priceWrap"><span class="dol">$</span><input type="text" inputmode="decimal" id="deposit" placeholder="0"></div>
+        <div class="balLine" id="balLine" style="display:none"><span>Balance still owed</span><b id="balVal">$0</b></div>
+      </div>
+    </div>
+
+    <!-- 5. PAYMENT / CONTACT (advanced, prefilled) -->
+    <details class="adv">
+      <summary>✏️ Payment &amp; contact info <span class="chev">▾</span></summary>
+      <div class="advbody">
+        <div class="card">
+          <div class="hint" style="margin-left:0">These are already filled in with your usual info. Tap a box to change it — the arrow ▾ shows your saved choices.</div>
+
+          <label>Deposit terms</label>
+          <input list="depTermsList" id="payDepTerms" value="$250 Deposit Due Upon Booking">
+          <datalist id="depTermsList">
+            <option value="$250 Deposit Due Upon Booking">
+            <option value="$100 Deposit Due Upon Booking">
+            <option value="$500 Deposit Due Upon Booking">
+            <option value="50% Deposit Due Upon Booking">
+          </datalist>
+
+          <div class="fieldgap"><label>When the rest is due</label>
+          <input list="remainderList" id="payRemainder" value="Remainder to be Paid One Week Prior to Event">
+          <datalist id="remainderList">
+            <option value="Remainder to be Paid One Week Prior to Event">
+            <option value="Remainder Due the Day of the Event">
+            <option value="Remainder Due 3 Days Prior to Event">
+            <option value="Paid in Full — Thank You!">
+          </datalist></div>
+
+          <div class="fieldgap"><label>Venmo</label>
+          <input list="venmoList" id="payVenmo" value="Venmo: @blossomsbymichele-1">
+          <datalist id="venmoList"><option value="Venmo: @blossomsbymichele-1"></datalist></div>
+
+          <div class="fieldgap"><label>Zelle</label>
+          <input list="zelleList" id="payZelle" value="Zelle : blossomsbymichele@gmail.com">
+          <datalist id="zelleList"><option value="Zelle : blossomsbymichele@gmail.com"></datalist></div>
+
+          <div class="fieldgap"><label>Card note</label>
+          <input list="cardList" id="payCard" value="All Major Credit Cards Accepted with 5% Service Fee">
+          <datalist id="cardList">
+            <option value="All Major Credit Cards Accepted with 5% Service Fee">
+            <option value="All Major Credit Cards Accepted with 3% Service Fee">
+            <option value="Cash, Venmo, or Zelle Only">
+          </datalist></div>
+
+          <div class="fieldgap"><label>Your name (signature)</label>
+          <input type="text" id="sigName" value="Michele Wise"></div>
+          <div class="fieldgap"><label>Your email</label>
+          <input type="text" id="sigEmail" value="blossomsbymichele@gmail.com"></div>
+          <div class="fieldgap"><label>Your phone</label>
+          <input type="text" id="sigPhone" value="(818) 536-2728"></div>
+        </div>
+      </div>
+    </details>
+
+    <!-- PREVIEW -->
+    <div class="card previewCard">
+      <div class="previewHead">👀 This is what your customer will see</div>
+      <div class="paper" id="paper">
+        <img class="plogo" src="logo.png" alt="">
+        <div class="pmeta">
+          <span id="pDate">Delivery Date:</span>
+          <span id="pBill">Billed To:</span>
+        </div>
+        <div class="ptable">
+          <div class="ph"><span>DESCRIPTION</span><span>PRICE</span></div>
+          <div id="pRows"></div>
+          <div class="ptot"><span>TOTAL :</span><span id="pTotal">$0</span></div>
+          <div id="pDepBal"></div>
+        </div>
+        <div class="pfoot">
+          <div class="blk">
+            <h4>Delivery Details :</h4>
+            <div id="pAddr" style="white-space:pre-wrap"></div>
+            <h4 style="margin-top:16px">Payment Details :</h4>
+            <div id="pPay" style="white-space:pre-wrap"></div>
+          </div>
+          <div class="sig">
+            <div class="ty">Thank you</div>
+            <div id="pSigName" style="margin-top:6px; font-weight:700"></div>
+            <div id="pSigEmail" class="muted"></div>
+            <div id="pSigPhone" class="muted"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="bar"><div class="inner">
+    <button class="bigbtn" id="makeBtn">📄 Make the Invoice</button>
+  </div></div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="jspdf.umd.min.js"></script>
+  <script>
+  (function(){
+    "use strict";
+    var $ = function(id){return document.getElementById(id);};
+
+    /* ---------- helpers ---------- */
+    var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+    function ordinal(n){var s=["th","st","nd","rd"],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);}
+    function fmtDate(iso){ if(!iso) return ""; var p=iso.split("-"); return MONTHS[(+p[1])-1]+" "+ordinal(+p[2]); }
+    function toNum(s){ if(s==null) return 0; var n=parseFloat((""+s).replace(/[^0-9.\-]/g,"")); return isNaN(n)?0:n; }
+    function money(n){
+      var neg=n<0; n=Math.abs(n); var hasCents = Math.round(n*100)%100 !== 0;
+      var str = n.toLocaleString("en-US",{minimumFractionDigits:hasCents?2:0, maximumFractionDigits:2});
+      return (neg?"-$":"$")+str;
+    }
+
+    /* ---------- DATE ---------- */
+    var dateEl=$("deliveryDate"), dateEcho=$("dateEcho");
+    function pad(x){return (x<10?"0":"")+x;}
+    function todayISO(){var d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());}
+    function updateDateEcho(){ dateEcho.textContent = dateEl.value ? "📅 "+fmtDate(dateEl.value) : ""; render(); }
+    $("todayBtn").addEventListener("click",function(){ dateEl.value=todayISO(); updateDateEcho(); });
+    dateEl.addEventListener("change",updateDateEcho);
+    dateEl.addEventListener("input",updateDateEcho);
+
+    /* ---------- ITEMS ---------- */
+    var itemsEl=$("items");
+    function addItem(desc,price){
+      var wrap=document.createElement("div"); wrap.className="item";
+      wrap.innerHTML =
+        '<button type="button" class="rm" title="Remove">×</button>'+
+        '<div class="itemLbl">What is it?</div>'+
+        '<textarea class="idesc" placeholder="Example:\n10&quot; Floral Garden Cake\nCake Flavor: Vanilla"></textarea>'+
+        '<div class="priceWrap"><div class="itemLbl">Price</div><span class="dol" style="top:auto; bottom:16px">$</span>'+
+        '<input class="iprice" inputmode="decimal" placeholder="0"></div>';
+      itemsEl.appendChild(wrap);
+      if(desc) wrap.querySelector(".idesc").value=desc;
+      if(price!=null) wrap.querySelector(".iprice").value=price;
+      wrap.querySelector(".rm").addEventListener("click",function(){
+        if(itemsEl.querySelectorAll(".item").length<=1){
+          wrap.querySelector(".idesc").value=""; wrap.querySelector(".iprice").value="";
+        } else { wrap.remove(); }
+        render();
+      });
+      wrap.querySelector(".idesc").addEventListener("input",render);
+      wrap.querySelector(".iprice").addEventListener("input",render);
+      render();
+    }
+    $("addItem").addEventListener("click",function(){addItem();});
+
+    function readItems(){
+      var out=[];
+      itemsEl.querySelectorAll(".item").forEach(function(it){
+        var d=it.querySelector(".idesc").value.trim();
+        var praw=it.querySelector(".iprice").value;
+        var p=toNum(praw);
+        if(d || praw.trim()) out.push({desc:d, price:p, hasPrice:praw.trim()!==""});
+      });
+      return out;
+    }
+
+    /* ---------- DEPOSIT ---------- */
+    $("deposit").addEventListener("input",render);
+
+    /* ---------- ADDRESS AUTOCOMPLETE ---------- */
+    var addrSearch=$("addrSearch"), acList=$("acList"), addrFull=$("addrFull");
+    var acTimer=null, acItems=[], acHl=-1;
+    function hideAc(){acList.classList.remove("show"); acList.innerHTML=""; acItems=[]; acHl=-1;}
+    function chooseAc(i){
+      var it=acItems[i]; if(!it) return;
+      addrFull.value = it.line2 ? (it.line1+"\n"+it.line2) : it.line1;
+      addrSearch.value = it.line1 || it.label;
+      hideAc(); render();
+    }
+    function renderAc(){
+      if(!acItems.length){hideAc();return;}
+      acList.innerHTML="";
+      acItems.forEach(function(it,i){
+        var d=document.createElement("div"); d.className="acitem"+(i===acHl?" hl":"");
+        d.innerHTML = "<span>"+(it.line1||it.label)+"</span>"+(it.line2?"<small>"+it.line2+"</small>":"");
+        d.addEventListener("mousedown",function(e){e.preventDefault(); chooseAc(i);});
+        acList.appendChild(d);
+      });
+      var note=document.createElement("div"); note.className="acnote"; note.textContent="Tap an address, or just type it below.";
+      acList.appendChild(note);
+      acList.classList.add("show");
+    }
+    function doSearch(q){
+      fetch("https://photon.komoot.io/api/?q="+encodeURIComponent(q)+"&limit=5&lang=en")
+        .then(function(r){return r.json();})
+        .then(function(j){
+          acItems=(j.features||[]).map(function(f){
+            var p=f.properties||{};
+            var line1=[p.housenumber,p.street||p.name].filter(Boolean).join(" ");
+            var line2=[(p.city||p.town||p.village||p.county), p.state, p.postcode].filter(Boolean).join(", ");
+            if(!line1) line1=p.name||line2;
+            return {line1:line1, line2:line2, label:[line1,line2].filter(Boolean).join(", ")};
+          }).filter(function(x){return x.line1;});
+          renderAc();
+        })
+        .catch(function(){ hideAc(); });
+    }
+    addrSearch.addEventListener("input",function(){
+      var q=addrSearch.value.trim();
+      addrFull.value = q; // keep in sync as they type
+      render();
+      clearTimeout(acTimer);
+      if(q.length<3){hideAc();return;}
+      acTimer=setTimeout(function(){doSearch(q);},300);
+    });
+    addrSearch.addEventListener("keydown",function(e){
+      if(!acList.classList.contains("show")) return;
+      if(e.key==="ArrowDown"){e.preventDefault(); acHl=Math.min(acHl+1,acItems.length-1); renderAc();}
+      else if(e.key==="ArrowUp"){e.preventDefault(); acHl=Math.max(acHl-1,0); renderAc();}
+      else if(e.key==="Enter"){ if(acHl>=0){e.preventDefault(); chooseAc(acHl);} }
+      else if(e.key==="Escape"){ hideAc(); }
+    });
+    addrSearch.addEventListener("blur",function(){ setTimeout(hideAc,150); });
+    addrFull.addEventListener("input",render);
+
+    /* ---------- prefilled payment/contact inputs ---------- */
+    ["payDepTerms","payRemainder","payVenmo","payZelle","payCard","billTo","sigName","sigEmail","sigPhone"]
+      .forEach(function(id){ $(id).addEventListener("input",render); });
+
+    /* ---------- gather all data ---------- */
+    function paymentLines(){
+      return [$("payDepTerms").value,$("payRemainder").value,$("payVenmo").value,$("payZelle").value,$("payCard").value]
+        .map(function(s){return (s||"").trim();}).filter(Boolean);
+    }
+    function gather(){
+      var items=readItems();
+      var total=items.reduce(function(a,b){return a+(b.price||0);},0);
+      var dep=toNum($("deposit").value);
+      return {
+        date:fmtDate(dateEl.value),
+        billTo:$("billTo").value.trim(),
+        addr:addrFull.value.trim(),
+        items:items, total:total,
+        deposit:dep, hasDeposit: $("deposit").value.trim()!=="" && dep>0,
+        balance: total-dep,
+        payment:paymentLines(),
+        sigName:$("sigName").value.trim(),
+        sigEmail:$("sigEmail").value.trim(),
+        sigPhone:$("sigPhone").value.trim()
+      };
+    }
+
+    /* ---------- LIVE PREVIEW ---------- */
+    function render(){
+      var d=gather();
+      $("pDate").textContent = "Delivery Date: "+(d.date||"—");
+      $("pBill").textContent = "Billed To: "+(d.billTo||"—");
+      $("totalVal").textContent = money(d.total);
+      $("pTotal").textContent = money(d.total);
+
+      var rows=$("pRows"); rows.innerHTML="";
+      d.items.forEach(function(it){
+        var r=document.createElement("div"); r.className="prow";
+        var lines=(it.desc||"").split("\n");
+        var head=lines.shift()||"";
+        var dhtml="<b>"+esc(head)+"</b>"+(lines.length?esc(lines.join("\n")):"");
+        r.innerHTML='<div class="d">'+dhtml+'</div><div class="p">'+(it.hasPrice?money(it.price):"")+'</div>';
+        rows.appendChild(r);
+      });
+
+      var db=$("pDepBal");
+      if(d.hasDeposit){
+        db.innerHTML='<div class="ptot"><span>DEPOSIT PAID :</span><span>'+money(d.deposit)+'</span></div>'+
+                     '<div class="ptot"><span>BALANCE :</span><span>'+money(d.balance)+'</span></div>';
+        $("balLine").style.display="flex"; $("balVal").textContent=money(d.balance);
+      } else { db.innerHTML=""; $("balLine").style.display="none"; }
+
+      $("pAddr").textContent = d.addr || "—";
+      $("pPay").textContent = d.payment.join("\n");
+      $("pSigName").textContent=d.sigName;
+      $("pSigEmail").textContent=d.sigEmail;
+      $("pSigPhone").textContent=d.sigPhone;
+    }
+    function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+    /* ---------- PDF ---------- */
+    function buildPDF(){
+      var d=gather();
+      var jsPDF=window.jspdf.jsPDF;
+      var doc=new jsPDF({unit:"pt",format:"letter"}); // 612 x 792
+      var W=612, L=56, R=556, cw=R-L;
+      var green=[95,115,85], ink=[54,46,40], grey=[120,110,100], soft=[230,221,212];
+
+      // logo
+      var img=$("logoImg");
+      try{ doc.addImage(img, "PNG", (W-118)/2, 40, 118, 118); }catch(e){}
+      var y=182;
+
+      // meta row
+      doc.setTextColor(ink[0],ink[1],ink[2]); doc.setFont("helvetica","bold"); doc.setFontSize(11.5);
+      doc.text("Delivery Date: "+(d.date||""), L, y);
+      doc.text("Billed To: "+(d.billTo||""), R, y, {align:"right"});
+
+      // table box top
+      var boxTop=y+16;
+      var tx=L+18, priceX=R-18;
+      var descRight=priceX-70; // wrap width for description
+
+      // header
+      var hy=boxTop+26;
+      doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(grey[0],grey[1],grey[2]);
+      doc.setCharSpace(2);
+      doc.text("DESCRIPTION", tx, hy);
+      doc.text("PRICE", descRight+30, hy);
+      doc.setCharSpace(0);
+      doc.setDrawColor(soft[0],soft[1],soft[2]); doc.setLineWidth(0.8);
+      doc.line(tx, hy+8, priceX, hy+8);
+
+      // items
+      var iy=hy+30;
+      doc.setTextColor(ink[0],ink[1],ink[2]);
+      d.items.forEach(function(it){
+        var lines=(it.desc||"").split("\n");
+        var head=lines.shift()||"";
+        // price aligned to first line
+        if(it.hasPrice){ doc.setFont("helvetica","normal"); doc.setFontSize(11.5); doc.text(money(it.price), descRight+30, iy); }
+        // head (bold)
+        doc.setFont("helvetica","bold"); doc.setFontSize(11.5);
+        var hw=doc.splitTextToSize(head, descRight-tx);
+        doc.text(hw, tx, iy);
+        var ly=iy + hw.length*15;
+        // rest (normal)
+        doc.setFont("helvetica","normal"); doc.setFontSize(11);
+        lines.forEach(function(ln){
+          if(ln.trim()===""){ ly+=6; return; }
+          var w=doc.splitTextToSize(ln, descRight-tx);
+          doc.text(w, tx, ly); ly+=w.length*14;
+        });
+        iy = ly + 16;
+      });
+
+      // total
+      iy += 2;
+      doc.setDrawColor(soft[0],soft[1],soft[2]); doc.setLineWidth(0.8);
+      doc.setFont("helvetica","bold"); doc.setFontSize(11.5); doc.setTextColor(ink[0],ink[1],ink[2]);
+      doc.setCharSpace(1.5);
+      doc.text("TOTAL :", descRight-4, iy, {align:"right"});
+      doc.setCharSpace(0);
+      doc.text(money(d.total), descRight+30, iy);
+
+      var boxBottom=iy+18;
+      // deposit / balance
+      if(d.hasDeposit){
+        doc.line(L+18, iy+14, priceX, iy+14);
+        iy+=40; doc.setCharSpace(1.5);
+        doc.text("DEPOSIT PAID :", descRight-4, iy, {align:"right"}); doc.setCharSpace(0);
+        doc.setFont("helvetica","normal"); doc.text(money(d.deposit), descRight+30, iy);
+        iy+=26; doc.setFont("helvetica","bold"); doc.setCharSpace(1.5);
+        doc.text("BALANCE :", descRight-4, iy, {align:"right"}); doc.setCharSpace(0);
+        doc.setFont("helvetica","normal"); doc.text(money(d.balance), descRight+30, iy);
+        boxBottom=iy+18;
+      }
+
+      // table border
+      doc.setDrawColor(soft[0],soft[1],soft[2]); doc.setLineWidth(1);
+      doc.roundedRect(L, boxTop, cw, boxBottom-boxTop, 4, 4);
+
+      // footer
+      var fy=Math.max(boxBottom+50, 600);
+      // left column
+      doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(ink[0],ink[1],ink[2]);
+      doc.text("Delivery Details :", L, fy);
+      doc.setLineWidth(0.6); doc.setDrawColor(ink[0],ink[1],ink[2]);
+      doc.line(L, fy+3, L+doc.getTextWidth("Delivery Details :"), fy+3);
+      doc.setFont("helvetica","normal"); doc.setFontSize(10.5);
+      var ay=fy+20;
+      (d.addr||"").split("\n").forEach(function(ln){ doc.text(ln, L, ay); ay+=15; });
+
+      var py=ay+18;
+      doc.setFont("helvetica","bold"); doc.setFontSize(11);
+      doc.text("Payment Details :", L, py);
+      doc.line(L, py+3, L+doc.getTextWidth("Payment Details :"), py+3);
+      doc.setFont("helvetica","normal"); doc.setFontSize(10);
+      var qy=py+18;
+      d.payment.forEach(function(ln){
+        var w=doc.splitTextToSize(ln, 300);
+        doc.text(w, L, qy); qy+=w.length*13.5;
+      });
+
+      // right column: signature
+      var rx=R;
+      doc.setFont("times","italic"); doc.setFontSize(26); doc.setTextColor(ink[0],ink[1],ink[2]);
+      doc.text("Thank you", rx, fy+6, {align:"right"});
+      doc.setFont("helvetica","bold"); doc.setFontSize(11);
+      doc.text(d.sigName||"", rx, fy+34, {align:"right"});
+      doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(grey[0],grey[1],grey[2]);
+      doc.text(d.sigEmail||"", rx, fy+52, {align:"right"});
+      doc.text(d.sigPhone||"", rx, fy+68, {align:"right"});
+
+      return doc;
+    }
+
+    /* ---------- share / download ---------- */
+    function toast(msg){ var t=$("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},3800); }
+    function fileName(d){
+      var who=(d.billTo||"").replace(/[^\w\s-]/g,"").trim().replace(/\s+/g,"-");
+      return "Invoice"+(who?"-"+who:"")+".pdf";
+    }
+    function makeInvoice(){
+      var d=gather();
+      if(!d.items.length){ toast("Add at least one item first 🙂"); return; }
+      var doc, blob;
+      try { doc=buildPDF(); blob=doc.output("blob"); }
+      catch(e){ toast("Something went wrong making the PDF."); console.error(e); return; }
+      var name=fileName(d);
+      var file=new File([blob],name,{type:"application/pdf"});
+
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        navigator.share({files:[file], title:name, text:"Your invoice from Blossoms by Michele"})
+          .then(function(){ toast("Sent! ✅"); })
+          .catch(function(err){ if(err && err.name==="AbortError") return; download(blob,name); });
+      } else {
+        download(blob,name);
+      }
+    }
+    function download(blob,name){
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement("a"); a.href=url; a.download=name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){URL.revokeObjectURL(url);},4000);
+      toast("Saved! 📎 Now attach it to a text or email.");
+    }
+    $("makeBtn").addEventListener("click",makeInvoice);
+
+    /* ---------- init ---------- */
+    dateEl.value=todayISO(); updateDateEcho();
+    addItem(); // one empty item to start
+    render();
+  })();
+  </script>
+</body>
+</html>
