@@ -91,7 +91,7 @@
   /* Address autocomplete */
   .ac{position:relative}
   .aclist{
-    position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:40;
+    position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:200;
     background:#fff; border:2px solid var(--line); border-radius:14px; overflow:hidden;
     box-shadow:var(--shadow); display:none;
   }
@@ -181,6 +181,9 @@
     opacity:0; pointer-events:none; transition:opacity .25s, bottom .25s;
   }
   .toast.show{opacity:1; bottom:120px}
+
+  /* While the suggestion list is open, hide the sticky button so it can never cover the list */
+  body.addr-open .bar{display:none}
 </style>
 </head>
 <body>
@@ -426,11 +429,11 @@
     /* ---------- ADDRESS AUTOCOMPLETE ---------- */
     var addrSearch=$("addrSearch"), acList=$("acList"), addrFull=$("addrFull");
     var acTimer=null, acItems=[], acHl=-1;
-    function hideAc(){acList.classList.remove("show"); acList.innerHTML=""; acItems=[]; acHl=-1;}
+    function hideAc(){acList.classList.remove("show"); acList.innerHTML=""; acItems=[]; acHl=-1; document.body.classList.remove("addr-open");}
     function showNoMatch(){
       acItems=[]; acHl=-1;
       acList.innerHTML='<div class="acnote" style="padding:14px 14px">No match found — just type the address in the box below 👇</div>';
-      acList.classList.add("show");
+      acList.classList.add("show"); document.body.classList.add("addr-open");
     }
     function chooseAc(i){
       var it=acItems[i]; if(!it) return;
@@ -444,12 +447,12 @@
       acItems.forEach(function(it,i){
         var d=document.createElement("div"); d.className="acitem"+(i===acHl?" hl":"");
         d.innerHTML = "<span>"+(it.line1||it.label)+"</span>"+(it.line2?"<small>"+it.line2+"</small>":"");
-        d.addEventListener("mousedown",function(e){e.preventDefault(); chooseAc(i);});
+        d.addEventListener("pointerdown",function(e){e.preventDefault(); chooseAc(i);}); // pointerdown = works for touch + mouse
         acList.appendChild(d);
       });
       var note=document.createElement("div"); note.className="acnote"; note.textContent="Tap an address, or just type it below.";
       acList.appendChild(note);
-      acList.classList.add("show");
+      acList.classList.add("show"); document.body.classList.add("addr-open");
     }
     function doSearch(q){
       var hm=q.match(/^\s*(\d+)\s+/); var typedNum=hm?hm[1]:"";
@@ -478,6 +481,15 @@
           }).filter(function(x){return x.line1 && !x.drop;});
           // US only — never show foreign matches (Photon sometimes guesses wildly).
           var us=mapped.filter(function(x){return x.cc==="US";});
+          // Rank the closest match to what she typed first.
+          var qWords=q.toLowerCase().split(/\s+/).filter(function(w){return w.length>=2;});
+          function score(x){
+            var L=x.label.toLowerCase(), s=0;
+            qWords.forEach(function(w){ if(L.indexOf(w)>=0) s++; });
+            if(typedNum && x.line1.indexOf(typedNum)===0) s+=2; // exact house number match wins
+            return s;
+          }
+          us.sort(function(a,b){return score(b)-score(a);});
           var seen={}; acItems=[];
           us.forEach(function(x){
             var k=x.label.toLowerCase();
@@ -503,7 +515,11 @@
       else if(e.key==="Enter"){ if(acHl>=0){e.preventDefault(); chooseAc(acHl);} }
       else if(e.key==="Escape"){ hideAc(); }
     });
-    addrSearch.addEventListener("blur",function(){ setTimeout(hideAc,150); });
+    addrSearch.addEventListener("focus",function(){
+      // lift the field up so the suggestions have room above the phone keyboard
+      setTimeout(function(){ try{ addrSearch.scrollIntoView({block:"start",behavior:"smooth"}); }catch(e){} }, 60);
+    });
+    addrSearch.addEventListener("blur",function(){ setTimeout(hideAc,200); });
     addrFull.addEventListener("input",render);
 
     /* ---------- DELIVERY / PICK-UP TOGGLE ---------- */
