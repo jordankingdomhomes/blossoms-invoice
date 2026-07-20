@@ -130,6 +130,7 @@
     for (var i = 0; i < DB.orders.length; i++) if (DB.orders[i].id === o.id) { DB.orders[i] = o; found = true; break; }
     if (!found) DB.orders.push(o);
     persist();
+    markDirty(o.id);          // queue it for the cloud
   }
 
   /* ================= derived money ================= */
@@ -491,6 +492,10 @@
     renderRecoveredBar();
     renderRecoveryCard();
     renderStandaloneBar();
+
+    var sync = el("div", "osync"); sync.id = "osync"; sync.style.display = "none";
+    root.appendChild(sync);
+    paintSyncLine();
 
     root.appendChild(buildHero());
 
@@ -1296,7 +1301,8 @@
       del.onclick = function () {
         if (!confirm("Delete this order? It will be removed from your list.")) return;
         var real = getOrder(o.id);
-        if (real) { real.deletedAt = nowISO(); persist(); }
+        // soft delete, and stamp updatedAt so the deletion wins on other devices
+        if (real) { real.deletedAt = nowISO(); real.updatedAt = nowISO(); persist(); markDirty(real.id); }
         go("#/orders");
       };
       form.appendChild(del);
@@ -1727,6 +1733,35 @@
 
     root.appendChild(safetyLine());
 
+    var cc = el("div", "ocard");
+    cc.appendChild(el("h3", null, "Cloud backup"));
+    if (cloudOn()) {
+      cc.appendChild(el("p", null, "On. Every order is saved to the cloud automatically — you don't have to do anything."));
+      var st = el("div", "ohint", CLOUD.lastPullAt ? "Last checked " + new Date(CLOUD.lastPullAt).toLocaleString() : "");
+      cc.appendChild(st);
+      var sn = el("button", "obtn obtn-plain", "↻ Check now");
+      sn.onclick = function () { live().forEach(function (o) { CLOUD.pending[o.id] = 1; }); runSync(); };
+      cc.appendChild(sn);
+    } else {
+      cc.appendChild(el("p", null, "Off — orders are only on this device. Paste your cloud code to turn it on."));
+      var ti = el("input"); ti.type = "text"; ti.placeholder = "paste the code here";
+      ti.setAttribute("autocapitalize", "off"); ti.setAttribute("autocorrect", "off"); ti.setAttribute("spellcheck", "false");
+      ti.style.cssText = "width:100%;font:inherit;font-size:17px;padding:14px;border:1px solid var(--o-line-2);border-radius:14px;margin-top:10px";
+      cc.appendChild(ti);
+      var tb = el("button", "obtn obtn-primary", "Turn on cloud backup");
+      tb.onclick = function () {
+        var v = (ti.value || "").trim();
+        if (v.length < 20) { alert("That code doesn't look right."); return; }
+        CLOUD.token = v; saveCloud();
+        live().forEach(function (o) { CLOUD.pending[o.id] = 1; });
+        runSync();
+        alert("Cloud backup is on.");
+        router();
+      };
+      cc.appendChild(tb);
+    }
+    root.appendChild(cc);
+
     var c1 = el("div", "ocard");
     c1.appendChild(el("h3", null, "Save a copy"));
     c1.appendChild(el("p", null, "This saves all your orders into one file. Save it to Files → iCloud Drive. Do this once a week."));
@@ -1840,6 +1875,205 @@
     c4.appendChild(ul);
     root.appendChild(c4);
   }
+
+  /* ================= CLOUD SYNC =================
+     Local-first: the device stays the fast copy and never blocks on the network.
+     Every change queues a push; every open pulls. Merge is last-write-wins per
+     order using the order's own updatedAt, which the server enforces too.
+
+     The token is NOT in this repo. It arrives once via a setup link
+     (?cloud=<token>), is saved to localStorage, and stripped from the URL. */
+  var K_CLOUD = "blossoms.cloud.v1";
+  var CLOUD = {
+    url: "https://blossoms-sync-892609853582.us-east1.run.app",
+    token: null,
+    lastPullAt: null,
+    state: "off",        // off | syncing | ok | offline | error
+    pending: {},         // order ids waiting to go up
+    suppress: false      // true while applying server data, so we don't echo it back
+  };
+
+  function loadCloud() {
+    try {
+      var c = JSON.parse(localStorage.getItem(K_CLOUD) || "null");
+      if (c && c.token) { CLOUD.token = c.token; CLOUD.lastPullAt = c.lastPullAt || null; }
+    } catch (e) { }
+    // one-time setup link: ?cloud=<token>
+    try {
+      var m = /[?&]cloud=([A-Za-z0-9_\-]{20,})/.exec(location.search || "");
+      if (m) {
+        CLOUD.token = m[1];
+        saveCloud();
+        // strip the token out of the address bar so it isn't shared by accident
+        history.replaceState(null, "", location.pathname + location.hash);
+      }
+    } catch (e) { }
+    CLOUD.state = CLOUD.token ? "syncing" : "off";
+  }
+  function saveCloud() {
+    try { localStorage.setItem(K_CLOUD, JSON.stringify({ token: CLOUD.token, lastPullAt: CLOUD.lastPullAt })); } catch (e) { }
+  }
+  function cloudOn() { return !!CLOUD.token; }
+  function cloudHeaders() { return { "Authorization": "Bearer " + CLOUD.token, "Content-Type": "application/json" }; }
+
+  function setSyncState(s) {
+    if (CLOUD.state === s) return;
+    CLOUD.state = s;
+    paintSyncLine();
+  }
+  function paintSyncLine() {
+    var el2 = $("osync");
+    if (!el2) return;
+    var n = Object.keys(CLOUD.pending).length;
+    var map = {
+      off: ["", ""],
+      syncing: ["osync-work", n ? "Saving " + n + " change" + (n === 1 ? "" : "s") + "…" : "Saving…"],
+      ok: ["osync-ok", "Saved to the cloud ✓"],
+      offline: ["osync-warn", "No internet — saved on this phone, will send when you're back"],
+      error: ["osync-warn", "Couldn't reach the cloud — your orders are safe on this phone"]
+    };
+    var m = map[CLOUD.state] || map.off;
+    el2.className = "osync " + m[0];
+    el2.textContent = m[1];
+    el2.style.display = m[1] ? "" : "none";
+  }
+
+  /* ---- merge server -> local ---- */
+  function mergeIncoming(list) {
+    var changed = 0;
+    (list || []).forEach(function (inc) {
+      if (!inc || !inc.id) return;
+      var found = -1;
+      for (var i = 0; i < DB.orders.length; i++) if (DB.orders[i].id === inc.id) { found = i; break; }
+      if (found < 0) { DB.orders.push(inc); changed++; return; }
+      // only take the server's copy if it is genuinely newer
+      if (String(inc.updatedAt || "") > String(DB.orders[found].updatedAt || "")) {
+        DB.orders[found] = inc; changed++;
+      }
+    });
+    if (changed) {
+      CLOUD.suppress = true;          // applying server data must not re-queue a push
+      persist(false);
+      CLOUD.suppress = false;
+    }
+    return changed;
+  }
+
+  function cloudPull() {
+    if (!cloudOn()) return Promise.resolve(0);
+    var u = CLOUD.url + "/api/orders" + (CLOUD.lastPullAt ? "?since=" + encodeURIComponent(CLOUD.lastPullAt) : "");
+    return fetch(u, { headers: cloudHeaders() })
+      .then(function (r) { if (!r.ok) throw new Error("pull " + r.status); return r.json(); })
+      .then(function (d) {
+        var n = mergeIncoming(d.orders);
+        CLOUD.lastPullAt = d.serverTime || CLOUD.lastPullAt;
+        saveCloud();
+        if (n) router();
+        return n;
+      });
+  }
+
+  function cloudPush() {
+    if (!cloudOn()) return Promise.resolve(0);
+    var ids = Object.keys(CLOUD.pending);
+    if (!ids.length) return Promise.resolve(0);
+    var batch = ids.map(getOrder).filter(Boolean);
+    if (!batch.length) { CLOUD.pending = {}; return Promise.resolve(0); }
+    return fetch(CLOUD.url + "/api/orders", {
+      method: "POST", headers: cloudHeaders(), body: JSON.stringify({ orders: batch })
+    }).then(function (r) { if (!r.ok) throw new Error("push " + r.status); return r.json(); })
+      .then(function (d) {
+        // only clear what we actually sent; anything edited mid-flight stays queued
+        batch.forEach(function (o) {
+          var cur = getOrder(o.id);
+          if (cur && String(cur.updatedAt) === String(o.updatedAt)) delete CLOUD.pending[o.id];
+        });
+        return d.written || 0;
+      });
+  }
+
+  /* ---- photos: upload what the cloud is missing, fetch what we lack ---- */
+  function syncPhotos() {
+    if (!cloudOn()) return Promise.resolve();
+    var wanted = {};
+    live().forEach(function (o) { (o.photos || []).forEach(function (id) { wanted[id] = true; }); });
+    var ids = Object.keys(wanted);
+    if (!ids.length) return Promise.resolve();
+    return fetch(CLOUD.url + "/api/photo/missing", {
+      method: "POST", headers: cloudHeaders(), body: JSON.stringify({ ids: ids })
+    }).then(function (r) { return r.ok ? r.json() : { missing: [] }; })
+      .then(function (d) {
+        var missing = d.missing || [];
+        // 1) anything the cloud lacks but we hold -> upload
+        return missing.reduce(function (chain, id) {
+          return chain.then(function () {
+            return idbGet("photos", id).then(function (p) {
+              if (!p || !p.blob) return;                       // we don't have it either
+              return blobToDataURL(p.blob).then(function (durl) {
+                return fetch(CLOUD.url + "/api/photo", {
+                  method: "POST", headers: cloudHeaders(), body: JSON.stringify({ id: id, dataUrl: durl })
+                });
+              });
+            }).catch(function () { });
+          });
+        }, Promise.resolve()).then(function () {
+          // 2) anything an order references that this device lacks -> download
+          var haveCloud = ids.filter(function (id) { return missing.indexOf(id) < 0; });
+          return haveCloud.reduce(function (chain, id) {
+            return chain.then(function () {
+              return idbGet("photos", id).then(function (p) {
+                if (p && p.blob) return;                       // already local
+                return fetch(CLOUD.url + "/api/photo/" + id, { headers: { "Authorization": "Bearer " + CLOUD.token } })
+                  .then(function (r) { if (!r.ok) throw new Error("no photo"); return r.blob(); })
+                  .then(function (b) {
+                    return idbPut("photos", { id: id, blob: b, w: 0, h: 0, bytes: b.size, type: b.type })
+                      .then(function () { return decode(b); })
+                      .then(function (bmp) { return scaleTo(bmp, 320, 0.7); })
+                      .then(function (t) { return idbPut("thumbs", { id: id, blob: t.blob, w: t.w, h: t.h }); });
+                  }).catch(function () { });
+              });
+            });
+          }, Promise.resolve());
+        });
+      }).catch(function () { });
+  }
+
+  /* ---- orchestration ---- */
+  var syncTimer = null, backoff = 2000;
+  function markDirty(id) {
+    if (!cloudOn() || CLOUD.suppress) return;
+    if (id) CLOUD.pending[id] = 1;
+    scheduleSync();
+  }
+  function scheduleSync() {
+    if (!cloudOn()) return;
+    setSyncState("syncing");
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(runSync, 1200);
+  }
+  function runSync() {
+    if (!cloudOn()) return;
+    if (!navigator.onLine) { setSyncState("offline"); return; }
+    setSyncState("syncing");
+    cloudPush()
+      .then(cloudPull)
+      .then(syncPhotos)
+      .then(function () {
+        backoff = 2000;
+        setSyncState(Object.keys(CLOUD.pending).length ? "syncing" : "ok");
+        if (Object.keys(CLOUD.pending).length) scheduleSync();
+      })
+      .catch(function (e) {
+        console.warn("sync failed", e);
+        setSyncState(navigator.onLine ? "error" : "offline");
+        // retry with backoff — her order is already safe locally
+        backoff = Math.min(backoff * 2, 60000);
+        clearTimeout(syncTimer);
+        syncTimer = setTimeout(runSync, backoff);
+      });
+  }
+  window.addEventListener("online", function () { backoff = 2000; scheduleSync(); });
+  window.addEventListener("offline", function () { setSyncState("offline"); });
 
   /* ================= web-app gestures =================
      Navigation only. Deliberately NO swipe-to-delete or swipe-to-complete —
@@ -1957,6 +2191,7 @@
 
   /* ================= boot ================= */
   load();
+  loadCloud();
   // Carry her existing orders over from her Notes, once per device.
   // Keyed on its own marker (not everHadOrders) so a device that already visited
   // the app while it was empty still gets them.
@@ -1993,6 +2228,12 @@
   window.addEventListener("hashchange", function () { router(); });
   router();
   bootRecover().then(function () { if (!location.hash || location.hash === "#/") router(); });
+
+  // first sync on open: everything already saved locally goes up, anything new comes down
+  if (cloudOn()) {
+    live().forEach(function (o) { CLOUD.pending[o.id] = 1; });
+    setTimeout(runSync, 600);
+  }
 
   // expose a tiny surface for testing only
   window.BlossomsOrders = {
