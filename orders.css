@@ -36,8 +36,42 @@
   --o-sh-rose:0 8px 24px rgba(180,82,95,.28);
 }
 
-.oscreen{max-width:660px; margin:0 auto; padding:0 18px 130px; font-variant-numeric:tabular-nums}
+/* ---- web-app behaviour ---- */
+html{ -webkit-text-size-adjust:100%; }
+body{
+  overscroll-behavior-y:contain;              /* no browser rubber-band fighting our pull */
+  -webkit-tap-highlight-color:transparent;
+  -webkit-touch-callout:none;
+}
+#oapp{ touch-action:pan-y; }                  /* vertical scroll to the browser, horizontal to us */
+#oapp button, .omonth, .otick-label, .oname, .ohero-sub, .otick-sub{
+  -webkit-user-select:none; user-select:none;
+}
+#oapp input, #oapp textarea, .ocard p, .owhat{ -webkit-user-select:text; user-select:text; }
+#oapp, #screen-invoice{ will-change:transform; }
+
+.oscreen{
+  max-width:660px; margin:0 auto; font-variant-numeric:tabular-nums;
+  padding:0 18px calc(130px + env(safe-area-inset-bottom));
+  padding-left:calc(18px + env(safe-area-inset-left));
+  padding-right:calc(18px + env(safe-area-inset-right));
+}
 .oscreen[hidden]{display:none}
+
+/* ---- pull to refresh ---- */
+.optr{
+  position:fixed; top:0; left:0; right:0; z-index:300; pointer-events:none;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  height:56px; margin-top:-56px; font-size:15px; font-weight:800; color:var(--o-rose-deep);
+  opacity:0; transition:opacity .15s ease;
+}
+.optr.show{opacity:1}
+.optr .ospin{
+  width:18px; height:18px; border-radius:50%;
+  border:2.5px solid var(--o-rose-line); border-top-color:var(--o-rose-deep);
+}
+.optr.spinning .ospin{animation:ospin .7s linear infinite}
+@keyframes ospin{to{transform:rotate(360deg)}}
 #oapp h2{font-size:30px; letter-spacing:-.6px; margin:14px 0 4px; color:var(--o-ink)}
 
 /* ---- sticky top bar (frosted) ---- */

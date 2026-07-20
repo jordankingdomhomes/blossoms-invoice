@@ -1719,8 +1719,136 @@
     root.appendChild(c4);
   }
 
+  /* ================= web-app gestures =================
+     Navigation only. Deliberately NO swipe-to-delete or swipe-to-complete —
+     one stray swipe wrecking an order would cost more trust than it saves taps. */
+
+  // where "back" goes from any screen (deterministic, no history surprises)
+  function parentRoute() {
+    var h = location.hash.replace(/^#/, "") || "/";
+    var q = h.indexOf("?"); if (q >= 0) h = h.slice(0, q);
+    var p = h.split("/").filter(Boolean);
+    if (!p.length) return null;                         // already home
+    if (p[0] === "edit" && p[1]) return "#/order/" + p[1];
+    if (p[0] === "order") return "#/orders";
+    if (p[0] === "orders" && p[1]) return "#/orders";   // calendar -> list
+    return "#/";
+  }
+  function activeScreen() {
+    return (invoiceScreen && !invoiceScreen.hidden) ? invoiceScreen : root;
+  }
+
+  var SW = { x: 0, y: 0, on: false, dir: null, screen: null };
+  document.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) { SW.on = false; return; }
+    var t = e.target;
+    if (t && t.closest && t.closest("input,textarea,select,.olightbox")) { SW.on = false; return; }
+    SW.x = e.touches[0].clientX; SW.y = e.touches[0].clientY;
+    SW.on = !!parentRoute(); SW.dir = null; SW.screen = activeScreen();
+  }, { passive: true });
+
+  document.addEventListener("touchmove", function (e) {
+    if (!SW.on || e.touches.length !== 1) return;
+    var dx = e.touches[0].clientX - SW.x, dy = e.touches[0].clientY - SW.y;
+    if (!SW.dir) {
+      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+      SW.dir = Math.abs(dx) > Math.abs(dy) * 1.4 ? "h" : "v";
+    }
+    if (SW.dir !== "h") return;
+    if (e.cancelable) e.preventDefault();               // we own this gesture now
+    // a little rubber-banded peek so it feels attached to the finger
+    var peek = Math.sign(dx) * Math.min(Math.abs(dx) * 0.4, 90);
+    SW.screen.style.transition = "none";
+    SW.screen.style.transform = "translateX(" + peek + "px)";
+  }, { passive: false });
+
+  function endSwipe(e) {
+    if (!SW.on) return;
+    var scr = SW.screen; SW.on = false;
+    if (!scr) return;
+    scr.style.transition = "transform .18s ease";
+    scr.style.transform = "";
+    if (SW.dir !== "h") return;
+    var t = e.changedTouches && e.changedTouches[0]; if (!t) return;
+    var dx = t.clientX - SW.x, dy = t.clientY - SW.y;
+    // either direction goes back: left-edge drag right (iOS habit) or a leftward flick
+    if (Math.abs(dy) > 60 || Math.abs(dx) < 70) return;
+    var target = parentRoute();
+    if (target) go(target);
+  }
+  document.addEventListener("touchend", endSwipe, { passive: true });
+  function resetGestures() {
+    if (SW.screen) { SW.screen.style.transition = "transform .18s ease"; SW.screen.style.transform = ""; }
+    SW.on = false;
+    PTR.on = false; PTR.d = 0;
+    if (ptrEl) { ptrEl.classList.remove("show", "spinning"); ptrEl.style.transform = ""; ptrTxt.textContent = "Pull to refresh"; }
+  }
+  // an interrupted touch (call, notification, gesture steal) must not leave the UI stuck
+  document.addEventListener("touchcancel", resetGestures, { passive: true });
+  window.addEventListener("blur", resetGestures);
+  document.addEventListener("visibilitychange", function () { if (document.hidden) resetGestures(); });
+
+  /* ---- pull down to refresh ---- */
+  var ptrEl = el("div", "optr");
+  ptrEl.appendChild(el("div", "ospin"));
+  var ptrTxt = el("span", null, "Pull to refresh");
+  ptrEl.appendChild(ptrTxt);
+  document.body.appendChild(ptrEl);
+
+  var PTR = { y: 0, on: false, d: 0 };
+  var PTR_TRIGGER = 78;
+  document.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) { PTR.on = false; return; }
+    if (window.scrollY > 2) { PTR.on = false; return; }
+    var t = e.target;
+    if (t && t.closest && t.closest("input,textarea,.olightbox")) { PTR.on = false; return; }
+    PTR.y = e.touches[0].clientY; PTR.on = true; PTR.d = 0;
+  }, { passive: true });
+
+  document.addEventListener("touchmove", function (e) {
+    if (!PTR.on || e.touches.length !== 1) return;
+    if (SW.dir === "h") { PTR.on = false; ptrEl.classList.remove("show"); return; }
+    var d = e.touches[0].clientY - PTR.y;
+    if (d <= 0 || window.scrollY > 2) {
+      PTR.on = false; ptrEl.classList.remove("show"); ptrEl.style.transform = ""; return;
+    }
+    if (e.cancelable) e.preventDefault();               // stop the page rubber-banding
+    PTR.d = Math.min(d, 150);
+    ptrEl.classList.add("show");
+    ptrEl.style.transform = "translateY(" + (PTR.d * 0.7) + "px)";
+    ptrTxt.textContent = PTR.d > PTR_TRIGGER ? "Let go to refresh" : "Pull to refresh";
+  }, { passive: false });
+
+  document.addEventListener("touchend", function () {
+    if (!PTR.on) return;
+    PTR.on = false;
+    if (PTR.d > PTR_TRIGGER) {
+      ptrTxt.textContent = "Refreshing…";
+      ptrEl.classList.add("spinning");
+      setTimeout(function () {
+        load();                                          // re-read from storage
+        bootRecover();
+        router();
+        ptrEl.classList.remove("show", "spinning");
+        ptrEl.style.transform = "";
+        ptrTxt.textContent = "Pull to refresh";
+      }, 420);
+    } else {
+      ptrEl.classList.remove("show");
+      ptrEl.style.transform = "";
+    }
+  }, { passive: true });
+
   /* ================= boot ================= */
   load();
+  // First run on a device: carry her existing orders over from her Notes.
+  // Only ever runs when the book is empty and has never had anything in it.
+  if (!DB.orders.length && !DB.meta.everHadOrders && window.BLOSSOMS_SEED) {
+    try {
+      DB.orders = JSON.parse(JSON.stringify(window.BLOSSOMS_SEED));
+      persist(false);
+    } catch (e) { console.warn("seed failed", e); }
+  }
   if (navigator.storage && navigator.storage.persist) { try { navigator.storage.persist(); } catch (e) { } }
   window.addEventListener("hashchange", function () { router(); });
   router();
