@@ -1942,6 +1942,28 @@
       persist(false);
     } catch (e) { console.warn("seed failed", e); }
   }
+  // Devices seeded before the photos existed still need them attached.
+  // Matches on date + name, and never touches an order she has added photos to herself.
+  if (!DB.meta.photosV1 && window.BLOSSOMS_SEED) {
+    try {
+      var byKey = {};
+      window.BLOSSOMS_SEED.forEach(function (s) {
+        if ((s.thumbUrls || []).length) byKey[s.eventDate + "|" + s.name] = s;
+      });
+      var patched = 0;
+      DB.orders.forEach(function (o) {
+        var s = byKey[o.eventDate + "|" + o.name];
+        if (!s) return;
+        if ((o.thumbUrls || []).length || (o.photos || []).length) return;
+        o.photoUrls = s.photoUrls.slice();
+        o.thumbUrls = s.thumbUrls.slice();
+        patched++;
+      });
+      DB.meta.photosV1 = true;
+      persist(false);
+      if (patched) console.log("attached photos to " + patched + " existing orders");
+    } catch (e) { console.warn("photo backfill failed", e); }
+  }
   if (navigator.storage && navigator.storage.persist) { try { navigator.storage.persist(); } catch (e) { } }
   window.addEventListener("hashchange", function () { router(); });
   router();
