@@ -527,8 +527,10 @@
     if (state.filter || state.monthFilter) {
       var fs = el("div", "ostrip amber tappable");
       var fb2 = futureBooked();
+      var rec = visibleOrders();
       var txt = state.monthFilter ? "Showing " + monthLabel(state.monthFilter) + " only."
         : state.filter === "upcoming" ? "Coming up — " + fb2.count + " order" + (fb2.count === 1 ? "" : "s") + " worth " + money(fb2.value)
+        : state.filter === "received" ? "Completed — " + money(rec.reduce(function (a, o) { return a + paid(o); }, 0)) + " taken in across " + rec.length + " order" + (rec.length === 1 ? "" : "s")
         : state.filter === "noprice" ? "Showing only orders that need a price."
         : "Showing only orders that still owe you.";
       fs.appendChild(el("span", null, txt));
@@ -568,7 +570,7 @@
     split.appendChild(a);
 
     var b = el("div", "ohero-half");
-    b.appendChild(el("div", "otick-label", "RECEIVED " + year));
+    b.appendChild(el("div", "otick-label", "COMPLETED " + year));
     b.appendChild(num(got));
     b.appendChild(el("div", "ohero-sub", "paid to you this year"));
     split.appendChild(b);
@@ -578,12 +580,10 @@
     a.onclick = function () { state.filter = "upcoming"; state.monthFilter = null; go("#/orders"); };
     a.appendChild(el("div", "ohero-tap", "Tap to see them ›"));
 
-    if (oe.total > 0) {
-      var strip = el("div", "ostrip tappable");
-      strip.appendChild(el("span", null, "💰 Still owed to you " + money(oe.total) + " across " + oe.count + " order" + (oe.count === 1 ? "" : "s")));
-      strip.onclick = function () { state.filter = "owed"; state.monthFilter = null; go("#/orders"); };
-      box.appendChild(strip);
-    }
+    b.style.cursor = "pointer";
+    b.onclick = function () { state.filter = "received"; state.monthFilter = null; go("#/orders"); };
+    b.appendChild(el("div", "ohero-tap", "Tap to see them ›"));
+
     return box;
   }
 
@@ -712,6 +712,11 @@
       var t = todayISO();
       return all.filter(function (o) { return o.kind === "order" && o.eventDate >= t; });
     }
+    // money that actually came in — newest first, since it's a "what have I taken" view
+    if (state.filter === "received") {
+      return all.filter(function (o) { return o.kind === "order" && paid(o) > 0; })
+                .sort(function (x, y) { return x.eventDate < y.eventDate ? 1 : -1; });
+    }
     if (state.filter === "overdue") return all.filter(function (o) { return o.kind === "order" && isOverdue(o); });
     if (state.filter === "owed") return all.filter(function (o) { var b = balance(o); return o.kind === "order" && !o.tentative && b != null && b > 0; });
     if (state.filter === "noprice") return all.filter(function (o) { return o.kind === "order" && grand(o) == null; });
@@ -798,6 +803,8 @@
     var meta = el("div", "ometa");
     // in the "coming up" view the order's value is the point — lead with it
     if (state.filter === "upcoming" && grand(o) != null) meta.appendChild(el("span", "ototal", money(grand(o))));
+    // in the "completed" view what matters is how much actually came in
+    if (state.filter === "received") meta.appendChild(el("span", "ototal", money(paid(o)) + " in"));
     var chip = moneyChip(o);
     if (chip && !o.done) { var c = el("span", "ochip " + chip.cls, chip.text); meta.appendChild(c); }
     var bits = [];
@@ -1582,15 +1589,44 @@
   }, true);
 
   /* ================= backup / settings ================= */
+  function dataURLtoBlob(u) { return fetch(u).then(function (r) { return r.blob(); }); }
+  function blobToDataURL(b) {
+    return new Promise(function (res, rej) {
+      var fr = new FileReader();
+      fr.onload = function () { res(fr.result); };
+      fr.onerror = rej;
+      fr.readAsDataURL(b);
+    });
+  }
+  // Backups carry the pictures as well as the words, so a restore is a real restore.
   function backupJSON() {
     var payload = JSON.parse(JSON.stringify(DB));
     payload.exportedAt = nowISO();
-    payload.photoNote = "Photos are not included in this file.";
-    return JSON.stringify(payload, null, 2);
+    var wanted = {};
+    live().forEach(function (o) { (o.photos || []).forEach(function (id) { wanted[id] = true; }); });
+    var ids = Object.keys(wanted);
+    if (!ids.length) { payload.photoData = {}; return Promise.resolve(JSON.stringify(payload, null, 2)); }
+    payload.photoData = {};
+    return ids.reduce(function (chain, id) {
+      return chain.then(function () {
+        return idbGet("photos", id).then(function (p) {
+          if (!p || !p.blob) return;
+          return blobToDataURL(p.blob).then(function (full) {
+            return idbGet("thumbs", id).then(function (t) {
+              return (t && t.blob ? blobToDataURL(t.blob) : Promise.resolve(full)).then(function (thumb) {
+                payload.photoData[id] = { full: full, thumb: thumb, w: p.w, h: p.h };
+              });
+            });
+          });
+        }).catch(function () { });
+      });
+    }, Promise.resolve()).then(function () { return JSON.stringify(payload, null, 2); });
   }
   function doBackup() {
     var name = "Blossoms-Orders-" + todayISO() + ".json";
-    var blob = new Blob([backupJSON()], { type: "application/json" });
+    backupJSON().then(function (txt) { finishBackup(name, new Blob([txt], { type: "application/json" })); });
+  }
+  function finishBackup(name, blob) {
     var file = null;
     try { file = new File([blob], name, { type: "application/json" }); } catch (e) { }
     function done() {
@@ -1699,8 +1735,25 @@
           }
         });
         persist();
-        alert("Done. You now have " + live().length + " orders.");
-        go("#/");
+        // a backup can carry the pictures too — put them back in the photo store
+        var pd = data.photoData || {};
+        var ids = Object.keys(pd);
+        if (!ids.length) { alert("Done. You now have " + live().length + " orders."); go("#/"); return; }
+        var done = 0;
+        ids.reduce(function (chain, id) {
+          return chain.then(function () {
+            var rec = pd[id];
+            return dataURLtoBlob(rec.full).then(function (fb) {
+              return idbPut("photos", { id: id, blob: fb, w: rec.w || 0, h: rec.h || 0, bytes: fb.size, type: fb.type })
+                .then(function () { return dataURLtoBlob(rec.thumb || rec.full); })
+                .then(function (tb) { return idbPut("thumbs", { id: id, blob: tb, w: 0, h: 0 }); })
+                .then(function () { done++; });
+            }).catch(function (e) { console.warn("photo restore failed", id, e); });
+          });
+        }, Promise.resolve()).then(function () {
+          alert("Done. You now have " + live().length + " orders and " + done + " photos.");
+          go("#/");
+        });
       });
     };
     c2.appendChild(fi);

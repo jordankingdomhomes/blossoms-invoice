@@ -73,8 +73,12 @@ window.BLOSSOMS_SEED = [
   "done": false,
   "doneAt": null,
   "invoicedAt": null,
-  "photoUrls": [],
-  "thumbUrls": []
+  "photoUrls": [
+   "photos/daniela-haim-1.jpg"
+  ],
+  "thumbUrls": [
+   "photos/daniela-haim-1-t.jpg"
+  ]
  },
  {
   "id": "n-876adebd5c58",
@@ -157,8 +161,12 @@ window.BLOSSOMS_SEED = [
   "done": false,
   "doneAt": null,
   "invoicedAt": null,
-  "photoUrls": [],
-  "thumbUrls": []
+  "photoUrls": [
+   "photos/susan-yates-1.jpg"
+  ],
+  "thumbUrls": [
+   "photos/susan-yates-1-t.jpg"
+  ]
  },
  {
   "id": "n-e23010cda732",
@@ -287,8 +295,12 @@ window.BLOSSOMS_SEED = [
   "done": false,
   "doneAt": null,
   "invoicedAt": null,
-  "photoUrls": [],
-  "thumbUrls": []
+  "photoUrls": [
+   "photos/natalie-aug8-1.jpg"
+  ],
+  "thumbUrls": [
+   "photos/natalie-aug8-1-t.jpg"
+  ]
  },
  {
   "id": "n-ff432eb29952",
@@ -417,8 +429,12 @@ window.BLOSSOMS_SEED = [
   "done": false,
   "doneAt": null,
   "invoicedAt": null,
-  "photoUrls": [],
-  "thumbUrls": []
+  "photoUrls": [
+   "photos/clarisse-1.jpg"
+  ],
+  "thumbUrls": [
+   "photos/clarisse-1-t.jpg"
+  ]
  },
  {
   "id": "n-da8c655a7d57",
@@ -468,8 +484,14 @@ window.BLOSSOMS_SEED = [
   "done": false,
   "doneAt": null,
   "invoicedAt": null,
-  "photoUrls": [],
-  "thumbUrls": []
+  "photoUrls": [
+   "photos/karen-1.jpg",
+   "photos/karen-2.jpg"
+  ],
+  "thumbUrls": [
+   "photos/karen-1-t.jpg",
+   "photos/karen-2-t.jpg"
+  ]
  },
  {
   "id": "n-433c94937657",
@@ -674,8 +696,12 @@ window.BLOSSOMS_SEED = [
   "done": false,
   "doneAt": null,
   "invoicedAt": null,
-  "photoUrls": [],
-  "thumbUrls": []
+  "photoUrls": [
+   "photos/susans-son-1.jpg"
+  ],
+  "thumbUrls": [
+   "photos/susans-son-1-t.jpg"
+  ]
  },
  {
   "id": "n-2fb700f6f807",
@@ -758,7 +784,11 @@ window.BLOSSOMS_SEED = [
   "done": false,
   "doneAt": null,
   "invoicedAt": null,
-  "photoUrls": [],
-  "thumbUrls": []
+  "photoUrls": [
+   "photos/tracy-1.jpg"
+  ],
+  "thumbUrls": [
+   "photos/tracy-1-t.jpg"
+  ]
  }
 ];
