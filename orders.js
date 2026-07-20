@@ -191,6 +191,21 @@
     return t;
   }
   function receivedAllTime() { return received(""); }
+  // Orders she has actually finished and handed over — her "completed" pile.
+  // A deposit landing does NOT make an order complete; she has to mark it done.
+  function completedIn(prefix) {
+    var value = 0, count = 0, collected = 0;
+    live().forEach(function (o) {
+      if (o.kind !== "order" || !o.done) return;
+      if (prefix && (o.eventDate || "").indexOf(prefix) !== 0) return;
+      count++;
+      var g = grand(o);
+      if (g != null) value += g;
+      collected += paid(o);
+    });
+    return { value: value, count: count, collected: collected };
+  }
+
   // Work already booked for days that haven't happened yet.
   function futureBooked() {
     var t = todayISO(), value = 0, count = 0, outstanding = 0, unpriced = 0;
@@ -530,7 +545,7 @@
       var rec = visibleOrders();
       var txt = state.monthFilter ? "Showing " + monthLabel(state.monthFilter) + " only."
         : state.filter === "upcoming" ? "Coming up — " + fb2.count + " order" + (fb2.count === 1 ? "" : "s") + " worth " + money(fb2.value)
-        : state.filter === "received" ? "Completed — " + money(rec.reduce(function (a, o) { return a + paid(o); }, 0)) + " taken in across " + rec.length + " order" + (rec.length === 1 ? "" : "s")
+        : state.filter === "received" ? "Completed — " + rec.length + " order" + (rec.length === 1 ? "" : "s") + " finished, worth " + money(rec.reduce(function (a, o) { return a + (grand(o) || 0); }, 0))
         : state.filter === "noprice" ? "Showing only orders that need a price."
         : "Showing only orders that still owe you.";
       fs.appendChild(el("span", null, txt));
@@ -550,7 +565,7 @@
   /* The front-door numbers: what's booked ahead vs what's actually landed. */
   function buildHero() {
     var year = todayISO().slice(0, 4);
-    var fb = futureBooked(), got = received(year), oe = owedEverywhere();
+    var fb = futureBooked(), comp = completedIn(year);
     var box = el("div", "oticker ohero");
 
     var split = el("div", "ohero-split");
@@ -571,8 +586,10 @@
 
     var b = el("div", "ohero-half");
     b.appendChild(el("div", "otick-label", "COMPLETED " + year));
-    b.appendChild(num(got));
-    b.appendChild(el("div", "ohero-sub", "paid to you this year"));
+    b.appendChild(num(comp.value));
+    b.appendChild(el("div", "ohero-sub", comp.count
+      ? comp.count + " order" + (comp.count === 1 ? "" : "s") + " finished"
+      : "nothing finished yet"));
     split.appendChild(b);
 
     box.appendChild(split);
@@ -712,9 +729,9 @@
       var t = todayISO();
       return all.filter(function (o) { return o.kind === "order" && o.eventDate >= t; });
     }
-    // money that actually came in — newest first, since it's a "what have I taken" view
+    // orders she has finished — most recent first
     if (state.filter === "received") {
-      return all.filter(function (o) { return o.kind === "order" && paid(o) > 0; })
+      return all.filter(function (o) { return o.kind === "order" && o.done; })
                 .sort(function (x, y) { return x.eventDate < y.eventDate ? 1 : -1; });
     }
     if (state.filter === "overdue") return all.filter(function (o) { return o.kind === "order" && isOverdue(o); });
@@ -803,8 +820,8 @@
     var meta = el("div", "ometa");
     // in the "coming up" view the order's value is the point — lead with it
     if (state.filter === "upcoming" && grand(o) != null) meta.appendChild(el("span", "ototal", money(grand(o))));
-    // in the "completed" view what matters is how much actually came in
-    if (state.filter === "received") meta.appendChild(el("span", "ototal", money(paid(o)) + " in"));
+    // in the "completed" view, what the finished order was worth
+    if (state.filter === "received" && grand(o) != null) meta.appendChild(el("span", "ototal", money(grand(o))));
     var chip = moneyChip(o);
     if (chip && !o.done) { var c = el("span", "ochip " + chip.cls, chip.text); meta.appendChild(c); }
     var bits = [];
@@ -830,6 +847,14 @@
 
   function emptyState() {
     var e = el("div", "oempty");
+    if (state.filter === "received") {
+      e.appendChild(el("h3", null, "Nothing finished yet"));
+      e.appendChild(el("p", null, "When you finish an order, tap the date circle on it to mark it done. Finished orders show up here."));
+      var sa = el("button", "obtn obtn-plain", "Show all orders");
+      sa.onclick = function () { state.filter = null; router(); };
+      e.appendChild(sa);
+      return e;
+    }
     if (state.filter) {
       e.appendChild(el("h3", null, "Nothing here"));
       e.appendChild(el("p", null, "No orders match that right now."));
