@@ -474,7 +474,6 @@
     root.appendChild(head);
 
     renderRecoveredBar();
-    renderBackupBar();
     renderRecoveryCard();
     renderStandaloneBar();
 
@@ -527,7 +526,9 @@
 
     if (state.filter || state.monthFilter) {
       var fs = el("div", "ostrip amber tappable");
+      var fb2 = futureBooked();
       var txt = state.monthFilter ? "Showing " + monthLabel(state.monthFilter) + " only."
+        : state.filter === "upcoming" ? "Coming up — " + fb2.count + " order" + (fb2.count === 1 ? "" : "s") + " worth " + money(fb2.value)
         : state.filter === "noprice" ? "Showing only orders that need a price."
         : "Showing only orders that still owe you.";
       fs.appendChild(el("span", null, txt));
@@ -573,20 +574,9 @@
     split.appendChild(b);
 
     box.appendChild(split);
-
-    // month-by-month ticker, stepped with the arrows
-    var mk = state.tickerMonth, ms = monthStats(mk);
-    var mrow = el("div", "omonthrow");
-    var prev = el("button", null, "‹"), next = el("button", null, "›");
-    prev.onclick = function () { state.tickerMonth = shiftMonth(mk, -1); state.calMonth = state.tickerMonth; router(); };
-    next.onclick = function () { state.tickerMonth = shiftMonth(mk, 1); state.calMonth = state.tickerMonth; router(); };
-    var mid = el("div", "omonthrow-mid");
-    mid.appendChild(el("div", "omonthrow-name", monthLabel(mk)));
-    mid.appendChild(el("div", "omonthrow-nums",
-      money(received(mk)) + " received  ·  " + (ms.worth ? money(ms.worth) : "—") + " booked  ·  " + ms.count + " order" + (ms.count === 1 ? "" : "s")));
-    mrow.appendChild(prev); mrow.appendChild(mid); mrow.appendChild(next);
-    mid.onclick = function () { state.monthFilter = mk; state.filter = null; go("#/orders"); };
-    box.appendChild(mrow);
+    a.style.cursor = "pointer";
+    a.onclick = function () { state.filter = "upcoming"; state.monthFilter = null; go("#/orders"); };
+    a.appendChild(el("div", "ohero-tap", "Tap to see them ›"));
 
     if (oe.total > 0) {
       var strip = el("div", "ostrip tappable");
@@ -718,6 +708,10 @@
   function visibleOrders() {
     var all = sorted();
     if (state.monthFilter) all = all.filter(function (o) { return monthKey(o.eventDate) === state.monthFilter; });
+    if (state.filter === "upcoming") {
+      var t = todayISO();
+      return all.filter(function (o) { return o.kind === "order" && o.eventDate >= t; });
+    }
     if (state.filter === "overdue") return all.filter(function (o) { return o.kind === "order" && isOverdue(o); });
     if (state.filter === "owed") return all.filter(function (o) { var b = balance(o); return o.kind === "order" && !o.tentative && b != null && b > 0; });
     if (state.filter === "noprice") return all.filter(function (o) { return o.kind === "order" && grand(o) == null; });
@@ -802,6 +796,8 @@
     body.appendChild(w);
 
     var meta = el("div", "ometa");
+    // in the "coming up" view the order's value is the point — lead with it
+    if (state.filter === "upcoming" && grand(o) != null) meta.appendChild(el("span", "ototal", money(grand(o))));
     var chip = moneyChip(o);
     if (chip && !o.done) { var c = el("span", "ochip " + chip.cls, chip.text); meta.appendChild(c); }
     var bits = [];
@@ -812,7 +808,10 @@
     if (meta.childNodes.length) body.appendChild(meta);
     row.appendChild(body);
 
-    if (o.photos && o.photos.length) {
+    if (o.thumbUrls && o.thumbUrls.length) {          // photos carried over from her Notes
+      var im2 = el("img", "othumb"); im2.alt = ""; im2.src = o.thumbUrls[0];
+      row.appendChild(im2);
+    } else if (o.photos && o.photos.length) {          // photos she added in the app
       var img = el("img", "othumb"); img.alt = "";
       thumbURL(o.photos[0]).then(function (u) { if (u) img.src = u; });
       row.appendChild(img);
@@ -1099,13 +1098,16 @@
     var payMethod = (o.payments && o.payments[0] && o.payments[0].method) || "zelle";
     if (o.payments && o.payments.length) depIn.value = (paid(o) / 100).toString();
 
+    // The deposit box is always on screen — she takes a deposit on nearly every
+    // order, so it should never be something she has to make appear.
     function paintMoneyExtra() {
       moneyExtra.innerHTML = "";
-      if (o.totalCents == null) return;
+
       var dw = el("div", "ofield");
       dw.appendChild(el("label", null, "Deposit (usually half)"));
       var w2 = el("div", "omoneywrap"); w2.appendChild(el("span", "odollar", "$")); w2.appendChild(depIn);
       dw.appendChild(w2);
+      if (o.totalCents == null) dw.appendChild(el("div", "ohint", "Type the price above and this fills in at half on its own."));
       moneyExtra.appendChild(dw);
 
       var pf = el("div", "ofield");
@@ -1114,7 +1116,7 @@
         { v: "none", label: "Not yet" }, { v: "deposit", label: "Deposit paid" }, { v: "full", label: "Paid in full" }
       ], payState, function (v) {
         payState = v;
-        if (v === "full") depIn.value = (o.totalCents / 100).toString();
+        if (v === "full" && o.totalCents != null) depIn.value = (o.totalCents / 100).toString();
         if (v === "none") depIn.value = "";
         paintMoneyExtra();
       }));
@@ -1127,9 +1129,11 @@
         moneyExtra.appendChild(mf);
       }
 
-      var depC = parseMoney(depIn.value) || 0;
-      var bal = (o.totalCents + (o.deliveryFeeCents || 0)) - (payState === "none" ? 0 : depC);
-      moneyExtra.appendChild(el("div", "obalance", "Balance " + money(bal)));
+      if (o.totalCents != null) {
+        var depC = parseMoney(depIn.value) || 0;
+        var bal = (o.totalCents + (o.deliveryFeeCents || 0)) - (payState === "none" ? 0 : depC);
+        moneyExtra.appendChild(el("div", "obalance", "Balance " + money(bal)));
+      }
     }
     totalIn.oninput = function () {
       var c = parseMoney(totalIn.value);
@@ -1359,11 +1363,20 @@
     if (o.what) { var c1 = el("div", "ocard"); c1.appendChild(el("h3", null, "What they want")); c1.appendChild(el("p", null, o.what)); d.appendChild(c1); }
     if (o.avoid) { var c2 = el("div", "ocard avoid"); c2.appendChild(el("h3", null, "Avoid")); c2.appendChild(el("p", null, o.avoid)); d.appendChild(c2); }
 
-    if (o.photos && o.photos.length) {
+    var hasUrlPhotos = o.thumbUrls && o.thumbUrls.length;
+    if (hasUrlPhotos || (o.photos && o.photos.length)) {
       var pc = el("div", "ocard");
       pc.appendChild(el("h3", null, "Photos"));
       var ps = el("div", "ophotos");
-      o.photos.forEach(function (pid) {
+      if (hasUrlPhotos) {
+        o.thumbUrls.forEach(function (t, i) {
+          var cell = el("div", "ophoto");
+          var img = el("img"); img.alt = ""; img.src = t;
+          img.onclick = function () { openLightboxURL((o.photoUrls || [])[i] || t); };
+          cell.appendChild(img); ps.appendChild(cell);
+        });
+      }
+      (o.photos || []).forEach(function (pid) {
         var cell = el("div", "ophoto");
         var img = el("img"); img.alt = "";
         thumbURL(pid).then(function (u) { if (u) img.src = u; });
@@ -1497,6 +1510,16 @@
     return wrap;
   }
 
+  function openLightboxURL(url) {
+    var lb = el("div", "olightbox");
+    var img = el("img"); img.src = url;
+    var back = el("button", "obtn obtn-secondary", "‹ Back");
+    back.style.maxWidth = "220px";
+    back.onclick = function () { lb.remove(); };
+    lb.appendChild(img); lb.appendChild(back);
+    lb.onclick = function (e) { if (e.target === lb) lb.remove(); };
+    document.body.appendChild(lb);
+  }
   function openLightbox(pid) {
     fullURL(pid).then(function (u) {
       if (!u) return;

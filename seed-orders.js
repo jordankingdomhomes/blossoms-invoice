@@ -1,5 +1,4 @@
-/* Michele's existing orders, carried over from her Apple Notes.
-   Loaded once, the first time the app is opened on a device. */
+/* Michele's existing orders, carried over from her Apple Notes. */
 window.BLOSSOMS_SEED = [
  {
   "id": "n-9d23e07a0a7c",
@@ -35,7 +34,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-43ef3ec2c441",
@@ -71,7 +72,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-876adebd5c58",
@@ -107,7 +110,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-0875c74d6b9d",
@@ -151,7 +156,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-e23010cda732",
@@ -187,7 +194,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-59481522064a",
@@ -231,7 +240,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-f79cd601524a",
@@ -275,7 +286,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-ff432eb29952",
@@ -311,7 +324,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-a4165e7af4d4",
@@ -355,7 +370,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-0f01ae08917b",
@@ -399,7 +416,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-da8c655a7d57",
@@ -448,7 +467,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-433c94937657",
@@ -492,7 +513,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-4414af3f6898",
@@ -528,7 +551,9 @@ window.BLOSSOMS_SEED = [
   "tentative": true,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-18b64c9eec10",
@@ -564,7 +589,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-ba7d5e4d382d",
@@ -608,7 +635,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-730cca7a9e8e",
@@ -644,7 +673,9 @@ window.BLOSSOMS_SEED = [
   "tentative": true,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-2fb700f6f807",
@@ -680,7 +711,9 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  },
  {
   "id": "n-53e06fa05108",
@@ -724,6 +757,8 @@ window.BLOSSOMS_SEED = [
   "tentative": false,
   "done": false,
   "doneAt": null,
-  "invoicedAt": null
+  "invoicedAt": null,
+  "photoUrls": [],
+  "thumbUrls": []
  }
 ];
