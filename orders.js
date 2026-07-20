@@ -488,9 +488,6 @@
     bMoney.onclick = function () { go("#/money"); };
     root.appendChild(bMoney);
 
-    // constant reassurance that nothing is lost
-    root.appendChild(safetyLine());
-
     var setBtn = el("button", "obtn obtn-plain", "⚙️  Backup & Settings");
     setBtn.onclick = function () { go("#/settings"); };
     root.appendChild(setBtn);
@@ -572,9 +569,6 @@
       strip.appendChild(el("span", null, "💰 Still owed to you " + money(oe.total) + " across " + oe.count + " order" + (oe.count === 1 ? "" : "s")));
       strip.onclick = function () { state.filter = "owed"; state.monthFilter = null; go("#/orders"); };
       box.appendChild(strip);
-    }
-    if (fb.unpriced > 0) {
-      box.appendChild(el("div", "ohero-note", fb.unpriced + " upcoming order" + (fb.unpriced === 1 ? "" : "s") + " still need a price."));
     }
     return box;
   }
@@ -1622,6 +1616,8 @@
     root.appendChild(topbar("Back to my orders", "#/"));
     root.appendChild(el("h2", null, "Backup & Settings"));
 
+    root.appendChild(safetyLine());
+
     var c1 = el("div", "ocard");
     c1.appendChild(el("h3", null, "Save a copy"));
     c1.appendChild(el("p", null, "This saves all your orders into one file. Save it to Files → iCloud Drive. Do this once a week."));
@@ -1825,14 +1821,8 @@
     if (PTR.d > PTR_TRIGGER) {
       ptrTxt.textContent = "Refreshing…";
       ptrEl.classList.add("spinning");
-      setTimeout(function () {
-        load();                                          // re-read from storage
-        bootRecover();
-        router();
-        ptrEl.classList.remove("show", "spinning");
-        ptrEl.style.transform = "";
-        ptrTxt.textContent = "Pull to refresh";
-      }, 420);
+      // a real reload, so a refresh also picks up a newer version of the app
+      setTimeout(function () { location.reload(); }, 320);
     } else {
       ptrEl.classList.remove("show");
       ptrEl.style.transform = "";
@@ -1841,11 +1831,13 @@
 
   /* ================= boot ================= */
   load();
-  // First run on a device: carry her existing orders over from her Notes.
-  // Only ever runs when the book is empty and has never had anything in it.
-  if (!DB.orders.length && !DB.meta.everHadOrders && window.BLOSSOMS_SEED) {
+  // Carry her existing orders over from her Notes, once per device.
+  // Keyed on its own marker (not everHadOrders) so a device that already visited
+  // the app while it was empty still gets them.
+  if (!DB.meta.seedV1 && !live().length && window.BLOSSOMS_SEED) {
     try {
-      DB.orders = JSON.parse(JSON.stringify(window.BLOSSOMS_SEED));
+      DB.orders = DB.orders.concat(JSON.parse(JSON.stringify(window.BLOSSOMS_SEED)));
+      DB.meta.seedV1 = true;
       persist(false);
     } catch (e) { console.warn("seed failed", e); }
   }
