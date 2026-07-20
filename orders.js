@@ -1764,22 +1764,43 @@
       sn.onclick = function () { live().forEach(function (o) { CLOUD.pending[o.id] = 1; }); runSync(); };
       cc.appendChild(sn);
     } else {
-      cc.appendChild(el("p", null, "Off — orders are only on this device. Paste your cloud code to turn it on."));
-      var ti = el("input"); ti.type = "text"; ti.placeholder = "paste the code here";
-      ti.setAttribute("autocapitalize", "off"); ti.setAttribute("autocorrect", "off"); ti.setAttribute("spellcheck", "false");
-      ti.style.cssText = "width:100%;font:inherit;font-size:17px;padding:14px;border:1px solid var(--o-line-2);border-radius:14px;margin-top:10px";
+      cc.appendChild(el("p", null, "Off — your orders are only on this phone. Type your code below to turn it on."));
+      var ti = el("input"); ti.type = "text"; ti.placeholder = "your code";
+      ti.setAttribute("autocapitalize", "off"); ti.setAttribute("autocorrect", "off");
+      ti.setAttribute("spellcheck", "false"); ti.setAttribute("autocomplete", "off");
+      ti.style.cssText = "width:100%;font:inherit;font-size:22px;font-weight:700;text-align:center;padding:16px;border:1px solid var(--o-line-2);border-radius:14px;margin-top:12px;min-height:64px";
       cc.appendChild(ti);
+
+      var msg = el("div", "ohint", "");
+      cc.appendChild(msg);
+
       var tb = el("button", "obtn obtn-primary", "Turn on cloud backup");
       tb.onclick = function () {
         var v = (ti.value || "").trim();
-        if (v.length < 20) { alert("That code doesn't look right."); return; }
-        CLOUD.token = v; saveCloud();
-        live().forEach(function (o) { CLOUD.pending[o.id] = 1; });
-        runSync();
-        alert("Cloud backup is on.");
-        router();
+        if (!v) { msg.textContent = "Type your code in the box above first."; msg.style.color = "var(--o-amber)"; ti.focus(); return; }
+        if (v.length < 6) { msg.textContent = "That code looks too short — check it and try again."; msg.style.color = "var(--o-amber)"; return; }
+        msg.textContent = "Checking…"; msg.style.color = "var(--o-muted)";
+        tb.disabled = true;
+        // verify before saving, so a wrong code says so instead of silently failing
+        fetch(CLOUD.url + "/api/orders", { headers: { "Authorization": "Bearer " + v } })
+          .then(function (r) {
+            tb.disabled = false;
+            if (r.status === 429) { msg.textContent = "Too many tries. Wait 15 minutes."; msg.style.color = "var(--o-amber)"; return; }
+            if (!r.ok) { msg.textContent = "That code isn't right. Check it and try again."; msg.style.color = "var(--o-amber)"; return; }
+            CLOUD.token = v; saveCloud();
+            live().forEach(function (o) { CLOUD.pending[o.id] = 1; });
+            runSync();
+            alert("Cloud backup is on. Your orders will save themselves from now on.");
+            go("#/");
+          })
+          .catch(function () {
+            tb.disabled = false;
+            msg.textContent = "No internet right now — try again when you're back online.";
+            msg.style.color = "var(--o-amber)";
+          });
       };
       cc.appendChild(tb);
+      cc.appendChild(el("div", "ohint", "Don't know your code? Ask Jordan — he can also turn it on for you with one tap."));
     }
     root.appendChild(cc);
 
