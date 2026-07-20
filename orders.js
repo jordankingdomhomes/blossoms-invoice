@@ -178,10 +178,19 @@
   }
   function overdueList() { return sorted().filter(function (o) { return o.kind === "order" && isOverdue(o); }); }
 
-  // Money actually marked as received, all time. This is the "closed" number.
-  function receivedAllTime() {
-    return live().reduce(function (a, o) { return o.kind === "order" ? a + paid(o) : a; }, 0);
+  // Money actually marked as received. `prefix` filters on the PAYMENT date
+  // ("2026" = year to date, "2026-07" = that month, "" = all time).
+  function received(prefix) {
+    var t = 0;
+    live().forEach(function (o) {
+      if (o.kind !== "order") return;
+      (o.payments || []).forEach(function (p) {
+        if (!prefix || (p.date || "").indexOf(prefix) === 0) t += p.cents || 0;
+      });
+    });
+    return t;
   }
+  function receivedAllTime() { return received(""); }
   // Work already booked for days that haven't happened yet.
   function futureBooked() {
     var t = todayISO(), value = 0, count = 0, outstanding = 0, unpriced = 0;
@@ -537,7 +546,8 @@
 
   /* The front-door numbers: what's booked ahead vs what's actually landed. */
   function buildHero() {
-    var fb = futureBooked(), got = receivedAllTime(), oe = owedEverywhere();
+    var year = todayISO().slice(0, 4);
+    var fb = futureBooked(), got = received(year), oe = owedEverywhere();
     var box = el("div", "oticker ohero");
 
     var split = el("div", "ohero-split");
@@ -557,12 +567,26 @@
     split.appendChild(a);
 
     var b = el("div", "ohero-half");
-    b.appendChild(el("div", "otick-label", "RECEIVED"));
+    b.appendChild(el("div", "otick-label", "RECEIVED " + year));
     b.appendChild(num(got));
-    b.appendChild(el("div", "ohero-sub", "paid to you so far"));
+    b.appendChild(el("div", "ohero-sub", "paid to you this year"));
     split.appendChild(b);
 
     box.appendChild(split);
+
+    // month-by-month ticker, stepped with the arrows
+    var mk = state.tickerMonth, ms = monthStats(mk);
+    var mrow = el("div", "omonthrow");
+    var prev = el("button", null, "‹"), next = el("button", null, "›");
+    prev.onclick = function () { state.tickerMonth = shiftMonth(mk, -1); state.calMonth = state.tickerMonth; router(); };
+    next.onclick = function () { state.tickerMonth = shiftMonth(mk, 1); state.calMonth = state.tickerMonth; router(); };
+    var mid = el("div", "omonthrow-mid");
+    mid.appendChild(el("div", "omonthrow-name", monthLabel(mk)));
+    mid.appendChild(el("div", "omonthrow-nums",
+      money(received(mk)) + " received  ·  " + (ms.worth ? money(ms.worth) : "—") + " booked  ·  " + ms.count + " order" + (ms.count === 1 ? "" : "s")));
+    mrow.appendChild(prev); mrow.appendChild(mid); mrow.appendChild(next);
+    mid.onclick = function () { state.monthFilter = mk; state.filter = null; go("#/orders"); };
+    box.appendChild(mrow);
 
     if (oe.total > 0) {
       var strip = el("div", "ostrip tappable");
@@ -897,7 +921,7 @@
     var o = existing ? JSON.parse(JSON.stringify(existing)) : blank();
     var pasteMode = /paste=1/.test(location.hash);
 
-    root.appendChild(topbar("Back to my orders", "#/"));
+    root.appendChild(topbar("Back to my orders", existing ? "#/order/" + existing.id : "#/orders"));
     root.appendChild(el("h2", null, isNew ? "New Order" : "Change this order"));
 
     if (isNew && pasteMode) {
@@ -927,7 +951,7 @@
     }
     renderFormInto(o, isNew);
   }
-  function renderForm2(o, isNew) { root.appendChild(topbar("Back to my orders", "#/")); root.appendChild(el("h2", null, isNew ? "New Order" : "Change this order")); renderFormInto(o, isNew); }
+  function renderForm2(o, isNew) { root.appendChild(topbar("Back to my orders", isNew ? "#/orders" : "#/order/" + o.id)); root.appendChild(el("h2", null, isNew ? "New Order" : "Change this order")); renderFormInto(o, isNew); }
 
   function renderFormInto(o, isNew) {
     var form = el("div");
@@ -1226,7 +1250,8 @@
       try { localStorage.removeItem(K_DRAFT); } catch (e) { }
       state.justSaved = fmtShort(o.eventDate) + (o.name ? ", " + o.name : "");
       state.justSavedId = o.id;
-      go("#/");
+      state.monthFilter = null; state.filter = null;
+      go("#/orders");
     };
     form.appendChild(save);
 
@@ -1236,7 +1261,7 @@
         if (!confirm("Delete this order? It will be removed from your list.")) return;
         var real = getOrder(o.id);
         if (real) { real.deletedAt = nowISO(); persist(); }
-        go("#/");
+        go("#/orders");
       };
       form.appendChild(del);
     }
@@ -1322,8 +1347,8 @@
 
   /* ================= DETAIL ================= */
   function renderDetail(o) {
-    if (!o) { go("#/"); return; }
-    root.appendChild(topbar("Back to my orders", "#/"));
+    if (!o) { go("#/orders"); return; }
+    root.appendChild(topbar("Back to my orders", "#/orders"));
     var d = el("div", "odetail");
 
     d.appendChild(el("h2", null, (o.name || "No name yet")));

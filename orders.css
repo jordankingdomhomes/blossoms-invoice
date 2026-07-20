@@ -135,6 +135,18 @@ body{
 .ohero-num{font-size:33px; font-weight:800; line-height:1.08; letter-spacing:-1.2px; margin:5px 0 3px; color:#fff; white-space:nowrap}
 .ohero-sub{font-size:13px; color:rgba(255,255,255,.86); font-weight:600; line-height:1.3}
 .ohero-note{margin-top:12px; font-size:14px; color:rgba(255,255,255,.9); font-weight:600}
+.omonthrow{
+  display:flex; align-items:center; gap:8px; margin-top:14px;
+  background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.22); border-radius:18px; padding:8px;
+}
+.omonthrow button{
+  flex:0 0 auto; min-width:44px; min-height:46px; border:none; background:rgba(255,255,255,.16); color:#fff;
+  border-radius:13px; font:inherit; font-size:19px; font-weight:800; cursor:pointer;
+}
+.omonthrow button:active{background:rgba(255,255,255,.3)}
+.omonthrow-mid{flex:1; min-width:0; text-align:center; cursor:pointer}
+.omonthrow-name{font-size:15px; font-weight:800; color:#fff; letter-spacing:.3px}
+.omonthrow-nums{font-size:12.5px; font-weight:600; color:rgba(255,255,255,.9); margin-top:2px}
 
 /* ---- month-by-month cards ---- */
 .omonthcard{
