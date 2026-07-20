@@ -3,8 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>Blossoms by Michele — Invoice Maker</title>
+<title>Blossoms by Michele</title>
 <link rel="apple-touch-icon" href="logo.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Blossoms">
+<meta name="theme-color" content="#fdf8f4">
 <style>
   @font-face{font-family:'Lexend Exa'; font-weight:400; font-display:swap; src:url('lexendexa400.ttf') format('truetype');}
   @font-face{font-family:'Lexend Exa'; font-weight:700; font-display:swap; src:url('lexendexa700.ttf') format('truetype');}
@@ -181,6 +186,7 @@
     opacity:0; pointer-events:none; transition:opacity .25s, bottom .25s;
   }
   .toast.show{opacity:1; bottom:120px}
+  #screen-invoice[hidden]{display:none}
 
   /* While the suggestion list is open, hide the sticky button so it can never cover the list */
   body.addr-open .bar{display:none}
@@ -189,6 +195,7 @@
 <body>
   <img id="logoImg" src="logo.png" alt="" crossorigin="anonymous" style="display:none">
 
+  <div id="screen-invoice" hidden>
   <header>
     <img src="logo.png" alt="Blossoms by Michele">
     <h1>Invoice Maker</h1>
@@ -342,6 +349,7 @@
   <div class="bar"><div class="inner">
     <button class="bigbtn" id="makeBtn">📄 Make the Invoice</button>
   </div></div>
+  </div><!-- /#screen-invoice -->
 
   <div class="toast" id="toast"></div>
 
@@ -746,5 +754,7 @@
     render();
   })();
   </script>
+  <link rel="stylesheet" href="orders.css">
+  <script src="orders.js"></script>
 </body>
 </html>

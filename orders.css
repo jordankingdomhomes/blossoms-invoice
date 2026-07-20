@@ -1,0 +1,242 @@
+/* ===== Blossoms Orders — senior-proof UI =====
+   Nothing under 16px. Tap targets >= 56px. Red only for overdue money. */
+
+:root{
+  --o-bg:#fdf8f4; --o-card:#fff; --o-ink:#40372f; --o-muted:#94897f;
+  --o-green:#5f7355; --o-pink:#e79aa2; --o-pink-deep:#d47f8b; --o-pink-soft:#f7e7ea;
+  --o-line:#ece3da; --o-amber:#b3781f; --o-amber-bg:#fdf3e2; --o-amber-line:#efd9b0;
+  --o-red:#b3453f; --o-red-bg:#fbeceb;
+  --o-good:#4a7a46; --o-good-bg:#eef5ec;
+  --o-shadow:0 6px 22px rgba(120,90,80,.10);
+}
+
+.oscreen{max-width:640px; margin:0 auto; padding:0 16px 140px}
+.oscreen[hidden]{display:none}
+
+/* ---- top bar ---- */
+.otopbar{
+  position:sticky; top:0; z-index:120; background:var(--o-bg);
+  padding:10px 0 8px; margin:0 -16px 6px; padding-left:16px; padding-right:16px;
+  border-bottom:1px solid var(--o-line);
+}
+.obackbtn{
+  display:inline-flex; align-items:center; gap:8px; min-height:52px; padding:10px 16px 10px 10px;
+  background:none; border:none; font:inherit; font-size:19px; font-weight:800;
+  color:var(--o-pink-deep); cursor:pointer;
+}
+
+/* ---- home header ---- */
+.ohead{text-align:center; padding:18px 0 6px}
+.ohead img{width:74px; height:74px; object-fit:contain; display:block; margin:0 auto 4px}
+.ohead h1{margin:0; font-size:21px; color:var(--o-green); font-weight:800; letter-spacing:.3px}
+
+/* ---- ticker ---- */
+.oticker{
+  background:var(--o-card); border:1px solid var(--o-line); border-radius:22px;
+  box-shadow:var(--o-shadow); padding:18px 16px 16px; margin:12px 0 14px; text-align:center;
+}
+.otick-nav{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px}
+.otick-nav button{
+  min-width:56px; min-height:48px; border:none; background:var(--o-pink-soft); color:var(--o-pink-deep);
+  border-radius:14px; font:inherit; font-size:18px; font-weight:800; cursor:pointer; padding:0 12px;
+}
+.otick-nav .om{font-size:17px; font-weight:800; color:var(--o-muted); letter-spacing:1px; text-transform:uppercase}
+.otick-label{font-size:15px; letter-spacing:1.6px; color:var(--o-muted); font-weight:800; text-transform:uppercase}
+.otick-big{font-size:46px; font-weight:800; color:var(--o-ink); line-height:1.05; margin:2px 0 2px}
+.otick-sub{font-size:17px; color:var(--o-muted); font-weight:700}
+.otick-tiles{display:flex; gap:10px; margin-top:14px}
+.otile{
+  flex:1; background:var(--o-bg); border:1px solid var(--o-line); border-radius:16px;
+  padding:12px 8px; text-align:center; cursor:pointer; min-height:74px;
+}
+.otile b{display:block; font-size:22px; color:var(--o-ink)}
+.otile span{display:block; font-size:14px; color:var(--o-muted); font-weight:700; margin-top:2px; line-height:1.25}
+.otile.amber{background:var(--o-amber-bg); border-color:var(--o-amber-line)}
+.otile.amber b{color:var(--o-amber)}
+
+/* ---- buttons ---- */
+.obtn{
+  display:flex; align-items:center; justify-content:center; gap:10px; width:100%;
+  min-height:68px; border-radius:20px; font:inherit; font-size:22px; font-weight:800;
+  cursor:pointer; border:none; margin:10px 0;
+}
+.obtn-primary{background:var(--o-pink-deep); color:#fff; box-shadow:0 8px 24px rgba(212,127,139,.40)}
+.obtn-secondary{background:#fff; color:var(--o-pink-deep); border:2px solid var(--o-pink)}
+.obtn-plain{background:#fff; color:var(--o-green); border:2px solid var(--o-line); font-size:19px; min-height:60px}
+.obtn-danger{background:#fff; color:var(--o-red); border:2px solid var(--o-line); font-size:18px; min-height:56px}
+.obtn:active{transform:translateY(1px)}
+
+/* ---- tabs ---- */
+.otabs{display:flex; gap:10px; margin:12px 0 4px}
+.otab{
+  flex:1; min-height:56px; border-radius:16px; border:2px solid var(--o-line); background:#fff;
+  font:inherit; font-size:19px; font-weight:800; color:var(--o-muted); cursor:pointer;
+}
+.otab.active{border-color:var(--o-pink); background:var(--o-pink-soft); color:var(--o-pink-deep)}
+
+/* ---- strips / banners ---- */
+.ostrip{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; border-radius:16px; padding:14px 16px; margin:10px 0;
+  font-size:17px; font-weight:700; line-height:1.35;
+}
+.ostrip > span{flex:1 1 200px; min-width:0}
+.ostrip.amber{background:var(--o-amber-bg); border:1px solid var(--o-amber-line); color:var(--o-amber)}
+.ostrip.red{background:var(--o-red-bg); border:1px solid #edc9c6; color:var(--o-red)}
+.ostrip.good{background:var(--o-good-bg); border:1px solid #d5e4d1; color:var(--o-good)}
+.ostrip button{
+  margin-left:auto; flex:0 0 auto; border:none; border-radius:12px; padding:10px 14px; min-height:44px;
+  font:inherit; font-size:16px; font-weight:800; cursor:pointer; background:rgba(0,0,0,.06); color:inherit;
+}
+.ostrip.tappable{cursor:pointer}
+
+/* ---- month group ---- */
+.omonth{
+  position:sticky; top:0; z-index:40; background:var(--o-bg);
+  padding:16px 2px 8px; font-size:15px; font-weight:800; letter-spacing:1.6px;
+  text-transform:uppercase; color:var(--o-muted);
+  display:flex; align-items:center; gap:8px;
+}
+.omonth .osum{margin-left:auto; letter-spacing:0; text-transform:none; font-size:15px; font-weight:700}
+.omonth.collapsed{cursor:pointer; color:var(--o-muted)}
+.omonth.warn{color:var(--o-amber)}
+
+/* ---- order row ---- */
+.orow{
+  display:flex; gap:10px; align-items:stretch; background:var(--o-card);
+  border:1px solid var(--o-line); border-radius:18px; padding:12px; margin:10px 0;
+  box-shadow:var(--o-shadow); cursor:pointer;
+}
+.orow.done{opacity:.55}
+.orow.justsaved{border-color:var(--o-pink); border-width:2px}
+.orail{
+  flex:0 0 58px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  border:none; background:var(--o-bg); border-radius:14px; font:inherit; cursor:pointer; padding:6px 0;
+  min-height:66px;
+}
+.orail .odow{font-size:13px; font-weight:800; color:var(--o-muted); letter-spacing:.6px}
+.orail .oday{font-size:27px; font-weight:800; color:var(--o-ink); line-height:1.05}
+.orail.isdone{background:var(--o-good-bg)}
+.orail.isdone .oday{color:var(--o-good)}
+.orail .oq{color:var(--o-amber)}
+.obody{flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; gap:3px}
+.oname{font-size:20px; font-weight:800; color:var(--o-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.orow.done .oname{text-decoration:line-through}
+.oname .odim{color:var(--o-muted); font-weight:700}
+.owhat{font-size:16px; color:var(--o-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.owhat.empty{color:var(--o-amber)}
+.ometa{display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:15px; color:var(--o-muted); font-weight:700}
+.othumb{flex:0 0 62px; width:62px; height:62px; border-radius:12px; object-fit:cover; background:var(--o-bg); align-self:center}
+.ochip{display:inline-block; padding:4px 10px; border-radius:999px; font-size:14px; font-weight:800}
+.ochip.paid{background:var(--o-good-bg); color:var(--o-good)}
+.ochip.owes{background:#fbeacd; color:var(--o-amber)}
+.ochip.nodep{background:#fff; color:var(--o-amber); border:1px solid var(--o-amber-line)}
+.ochip.collect{background:var(--o-red); color:#fff}
+.ochip.noprice{background:#fff; color:var(--o-muted); border:1px solid var(--o-line)}
+.orow.reminder .oname{font-style:italic; color:var(--o-muted); font-weight:700}
+
+/* ---- form ---- */
+.ofield{margin:16px 0}
+.ofield > label{display:block; font-size:19px; font-weight:800; margin-bottom:7px; color:var(--o-ink)}
+.ofield input, .ofield textarea, .ofield select{
+  width:100%; font:inherit; font-size:20px; color:var(--o-ink); background:#fff;
+  border:2px solid var(--o-line); border-radius:14px; padding:14px; min-height:60px;
+}
+.ofield textarea{min-height:96px; resize:vertical; line-height:1.4}
+.ofield input:focus, .ofield textarea:focus{outline:none; border-color:var(--o-pink)}
+.ofield .ohint{font-size:15px; color:var(--o-muted); margin-top:6px; font-weight:700}
+.oecho{margin-top:8px; font-size:18px; font-weight:800; color:var(--o-green)}
+.ochips{display:flex; gap:8px; flex-wrap:wrap}
+.ochoice{
+  flex:1 1 auto; min-width:96px; min-height:60px; border-radius:15px; border:2px solid var(--o-line);
+  background:#fff; font:inherit; font-size:17px; font-weight:800; color:var(--o-muted); cursor:pointer;
+  padding:10px 12px;
+}
+.ochoice.active{border-color:var(--o-pink); background:var(--o-pink-soft); color:var(--o-pink-deep)}
+.omoneywrap{position:relative}
+.omoneywrap .odollar{position:absolute; left:14px; top:50%; transform:translateY(-50%); font-size:20px; color:var(--o-muted)}
+.omoneywrap input{padding-left:32px}
+.obalance{margin-top:10px; font-size:19px; font-weight:800; color:var(--o-ink); background:var(--o-pink-soft); border-radius:14px; padding:12px 14px}
+.otoggle{display:flex; align-items:center; gap:12px; min-height:56px; font-size:18px; font-weight:700; cursor:pointer}
+.otoggle input{width:26px; height:26px; min-height:0; flex:0 0 auto}
+.odisclose{margin:14px 0}
+.odisclose > summary{
+  list-style:none; cursor:pointer; background:#fff; border:2px solid var(--o-line); border-radius:18px;
+  padding:16px 18px; font-weight:800; font-size:18px; color:var(--o-green); min-height:60px;
+  display:flex; align-items:center; gap:10px;
+}
+.odisclose > summary::-webkit-details-marker{display:none}
+
+/* ---- photos ---- */
+.odrop{
+  border:2px dashed var(--o-pink); border-radius:18px; background:#fff; min-height:100px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+  font-size:19px; font-weight:800; color:var(--o-pink-deep); cursor:pointer; padding:16px; text-align:center;
+}
+.odrop small{font-size:15px; color:var(--o-muted); font-weight:700}
+.odrop.over{background:var(--o-pink-soft)}
+.ophotos{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px}
+.ophoto{position:relative; width:88px; height:88px}
+.ophoto img{width:88px; height:88px; object-fit:cover; border-radius:14px; background:var(--o-line)}
+.ophoto button{
+  position:absolute; top:-8px; right:-8px; width:34px; height:34px; border-radius:50%;
+  border:2px solid #fff; background:#6b625a; color:#fff; font-size:17px; font-weight:800; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; padding:0;
+}
+.olightbox{
+  position:fixed; inset:0; background:rgba(30,26,23,.94); z-index:400; display:flex;
+  flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:20px;
+}
+.olightbox img{max-width:100%; max-height:80vh; border-radius:12px}
+
+/* ---- detail ---- */
+.odetail h2{font-size:26px; margin:6px 0 2px; color:var(--o-ink)}
+.odetail .osubtitle{font-size:18px; color:var(--o-muted); font-weight:700; margin-bottom:14px}
+.ocard{background:#fff; border:1px solid var(--o-line); border-radius:18px; box-shadow:var(--o-shadow); padding:16px; margin:12px 0}
+.ocard h3{margin:0 0 8px; font-size:15px; letter-spacing:1.4px; text-transform:uppercase; color:var(--o-muted)}
+.ocard p{margin:0; font-size:18px; line-height:1.45; white-space:pre-wrap}
+.ocard.avoid{background:var(--o-amber-bg); border-color:var(--o-amber-line)}
+.omoneyrow{display:flex; justify-content:space-between; font-size:19px; padding:7px 0; font-weight:700}
+.omoneyrow.big{font-size:23px; font-weight:800; border-top:1px solid var(--o-line); margin-top:6px; padding-top:12px}
+
+/* ---- calendar ---- */
+.ocalhead{display:flex; align-items:center; gap:8px; margin:8px 0 6px}
+.ocalhead button{min-width:52px; min-height:52px; border:none; background:var(--o-pink-soft); color:var(--o-pink-deep); border-radius:14px; font:inherit; font-size:20px; font-weight:800; cursor:pointer}
+.ocalhead .ocaltitle{flex:1; text-align:center; font-size:19px; font-weight:800; color:var(--o-ink)}
+.ocalgrid{display:grid; grid-template-columns:repeat(7,1fr); gap:2px; background:#fff; border:1px solid var(--o-line); border-radius:16px; padding:8px; box-shadow:var(--o-shadow)}
+.ocaldow{text-align:center; font-size:13px; font-weight:800; color:var(--o-muted); padding:4px 0}
+.ocalday{
+  min-height:48px; border:none; background:none; font:inherit; cursor:pointer; border-radius:10px;
+  display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:5px 0 2px; gap:2px;
+}
+.ocalday .on{font-size:17px; font-weight:700; color:var(--o-ink)}
+.ocalday.other .on{color:#d5cbc1}
+.ocalday.today{background:var(--o-pink-soft)}
+.ocalday.today .on{color:var(--o-pink-deep); font-weight:800}
+.ocaldots{display:flex; gap:3px; align-items:center; height:12px}
+.ocaldot{width:6px; height:6px; border-radius:50%; background:var(--o-pink)}
+.ocaldot.hollow{background:none; border:1.5px solid var(--o-muted)}
+.ocalmoney{font-size:12px; font-weight:800; color:var(--o-amber); line-height:1}
+.oagenda{margin-top:14px}
+.oagenda .oday-head{font-size:15px; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; color:var(--o-muted); padding:14px 2px 4px; display:flex}
+.oagenda .oday-head .oc{margin-left:auto; letter-spacing:0; text-transform:none}
+
+/* ---- misc ---- */
+.oempty{text-align:center; padding:30px 16px; color:var(--o-muted)}
+.oempty h3{font-size:22px; color:var(--o-ink); margin:0 0 8px}
+.oempty p{font-size:18px; margin:0 0 16px; line-height:1.45}
+.ofoot{text-align:center; font-size:15px; color:var(--o-muted); font-weight:700; padding:18px 0 6px}
+.osaved{background:var(--o-good-bg); border:1px solid #d5e4d1; color:var(--o-good); border-radius:14px; padding:12px 14px; font-weight:800; font-size:17px; margin:10px 0}
+.ohelp{font-size:16px; color:var(--o-muted); line-height:1.5}
+.ohelp li{margin-bottom:8px}
+
+/* ---- print: the whiteboard replacement ---- */
+@media print{
+  body{background:#fff}
+  .otopbar,.oticker,.otabs,.obtn,.ostrip,.ocalgrid,.ocalhead,.ofoot,.othumb,.bar,#screen-invoice{display:none !important}
+  .oscreen{padding:0; max-width:none}
+  .orow{break-inside:avoid; box-shadow:none; border:none; border-bottom:1px solid #ccc; border-radius:0; padding:8px 0; margin:0}
+  .orail{background:none}
+  .oprint-only{display:block !important}
+  .omonth{position:static}
+}
+.oprint-only{display:none}
