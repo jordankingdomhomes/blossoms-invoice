@@ -139,6 +139,10 @@
   function balance(o) { var g = grand(o); return g == null ? null : g - paid(o); }
   function isOverdue(o) { var b = balance(o); return b != null && b > 0 && o.eventDate < todayISO(); }
 
+  function methodLabel(v) {
+    for (var i = 0; i < METHODS.length; i++) if (METHODS[i].v === v) return METHODS[i].label;
+    return v || "";
+  }
   function moneyChip(o) {
     if (o.kind === "reminder") return null;
     var g = grand(o), p = paid(o), b = balance(o);
@@ -1449,15 +1453,37 @@
       mc.appendChild(r1);
       if (o.deliveryFeeCents) { var r2 = el("div", "omoneyrow"); r2.appendChild(el("span", null, "Delivery")); r2.appendChild(el("b", null, money(o.deliveryFeeCents))); mc.appendChild(r2); }
       (o.payments || []).forEach(function (p) {
-        var r = el("div", "omoneyrow");
-        r.appendChild(el("span", null, "Paid " + (p.method ? "(" + p.method + ")" : "")));
-        r.appendChild(el("b", null, "− " + money(p.cents)));
+        var r = el("div", "omoneyrow opayrow");
+        var lbl = el("span", null, "She paid" + (p.method ? " by " + methodLabel(p.method) : ""));
+        if (p.date) lbl.appendChild(el("small", "opaydate", " " + fmtShort(p.date)));
+        r.appendChild(lbl);
+        var amt = el("b", "opaid", money(p.cents));
+        r.appendChild(amt);
+        // a mis-entered payment must be removable — she entered one twice
+        var x = el("button", "opayx", "✕");
+        x.title = "Remove this payment";
+        x.onclick = function () {
+          if (!confirm("Remove this " + money(p.cents) + " payment?")) return;
+          var real = getOrder(o.id);
+          real.payments = real.payments.filter(function (q) { return q.id !== p.id; });
+          upsert(real); router();
+        };
+        r.appendChild(x);
         mc.appendChild(r);
       });
+
+      var bal = balance(o);
       var rb = el("div", "omoneyrow big");
-      rb.appendChild(el("span", null, balance(o) <= 0 ? "Paid in full" : "Still owes you"));
-      rb.appendChild(el("b", null, money(Math.max(0, balance(o)))));
+      rb.appendChild(el("span", null, bal <= 0 ? "Paid in full ✓" : "Still owes you"));
+      rb.appendChild(el("b", null, money(Math.max(0, bal))));
       mc.appendChild(rb);
+
+      // overpaid almost always means the same payment was entered twice
+      if (bal < 0) {
+        var warn = el("div", "ostrip amber");
+        warn.appendChild(el("span", null, "She's paid " + money(-bal) + " more than the total. Did you enter a payment twice? Tap the ✕ next to one to remove it."));
+        mc.appendChild(warn);
+      }
     }
     mc.appendChild(paymentAdder(o));
     d.appendChild(mc);
@@ -1545,6 +1571,13 @@
       var c = parseMoney(amt.value);
       if (!c) { alert("Type how much they paid."); return; }
       var real = getOrder(o.id);
+      var remaining = balance(real);
+      // catch the double-entry before it happens rather than after
+      if (remaining != null && remaining <= 0) {
+        if (!confirm("This order is already paid in full.\n\nAdd another " + money(c) + " anyway?")) return;
+      } else if (remaining != null && c > remaining) {
+        if (!confirm("She only owes " + money(remaining) + ", but you typed " + money(c) + ".\n\nSave it anyway?")) return;
+      }
       real.payments.push({
         id: uuid(), cents: c, method: method, date: todayISO(),
         kind: real.payments.length ? "final" : "deposit"
