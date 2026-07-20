@@ -84,14 +84,17 @@
   function persist(countChange) {
     if (countChange !== false) DB.meta.changesSinceBackup = (DB.meta.changesSinceBackup || 0) + 1;
     if (DB.orders.some(function (o) { return !o.deletedAt; })) DB.meta.everHadOrders = true;
+    var json = JSON.stringify(DB);
+    var ok = true;
     try {
-      localStorage.setItem(K_ORDERS, JSON.stringify(DB));
-      return true;
+      localStorage.setItem(K_ORDERS, json);
     } catch (e) {
       console.error("save failed", e);
-      alert("Your phone is low on space, so this could not be saved. Try deleting some photos.");
-      return false;
+      ok = false;
     }
+    mirror(json); // second copy + restore point, always — even if localStorage just failed
+    if (!ok) alert("Your phone is low on space. Your order was copied to the backup store, but please tap SAVE MY ORDERS now.");
+    return ok;
   }
   function snapshot() {
     try {
@@ -159,7 +162,9 @@
       owed += Math.max(0, g - paid(o));
       if (o.deliveryTBD || o.totalInferred) tbd++;
     });
-    return { count: firm.length, worth: worth, paidSum: paidSum, owed: owed, needPrice: needPrice, tentSum: tentSum, tentCount: tentCount, tbd: tbd, all: os };
+    // count every real order in the month (tentative included) so it always matches
+    // the number of rows she can actually see in the list
+    return { count: os.length, firmCount: firm.length, worth: worth, paidSum: paidSum, owed: owed, needPrice: needPrice, tentSum: tentSum, tentCount: tentCount, tbd: tbd, all: os };
   }
   function owedEverywhere() {
     var total = 0, n = 0;
@@ -173,17 +178,44 @@
   }
   function overdueList() { return sorted().filter(function (o) { return o.kind === "order" && isOverdue(o); }); }
 
+  // Money actually marked as received, all time. This is the "closed" number.
+  function receivedAllTime() {
+    return live().reduce(function (a, o) { return o.kind === "order" ? a + paid(o) : a; }, 0);
+  }
+  // Work already booked for days that haven't happened yet.
+  function futureBooked() {
+    var t = todayISO(), value = 0, count = 0, outstanding = 0, unpriced = 0;
+    live().forEach(function (o) {
+      if (o.kind !== "order" || o.eventDate < t) return;
+      count++;
+      var g = grand(o);
+      if (g == null) { unpriced++; return; }
+      if (o.tentative) return;
+      value += g;
+      outstanding += Math.max(0, g - paid(o));
+    });
+    return { value: value, count: count, outstanding: outstanding, unpriced: unpriced };
+  }
+  // Every month that has any order, newest first.
+  function monthsWithOrders() {
+    var seen = {};
+    live().forEach(function (o) { if (o.kind === "order") seen[monthKey(o.eventDate)] = true; });
+    return Object.keys(seen).sort().reverse();
+  }
+
   /* ================= photos: IndexedDB ================= */
   var idb = null;
   function openDB() {
     return new Promise(function (res, rej) {
       if (idb) return res(idb);
       if (!window.indexedDB) return rej(new Error("no indexeddb"));
-      var rq = indexedDB.open("blossoms", 1);
+      var rq = indexedDB.open("blossoms", 2);
       rq.onupgradeneeded = function (e) {
         var d = e.target.result;
         if (!d.objectStoreNames.contains("photos")) d.createObjectStore("photos", { keyPath: "id" });
         if (!d.objectStoreNames.contains("thumbs")) d.createObjectStore("thumbs", { keyPath: "id" });
+        // second, independent copy of every order + rolling restore points
+        if (!d.objectStoreNames.contains("safety")) d.createObjectStore("safety", { keyPath: "k" });
       };
       rq.onsuccess = function () { idb = rq.result; res(idb); };
       rq.onerror = function () { rej(rq.error); };
@@ -218,6 +250,77 @@
         tx.onerror = function () { res(); };
       });
     });
+  }
+
+  function idbAll(store) {
+    return openDB().then(function (d) {
+      return new Promise(function (res) {
+        var tx = d.transaction(store, "readonly");
+        var rq = tx.objectStore(store).getAll();
+        rq.onsuccess = function () { res(rq.result || []); };
+        rq.onerror = function () { res([]); };
+      });
+    });
+  }
+
+  /* ================= FAIL-SAFE =================
+     Every save is written twice: localStorage (fast, primary) and IndexedDB
+     (independent store). Plus rolling restore points so a bad edit or an
+     accidental delete is always recoverable. */
+  var SNAP_KEEP = 12;
+  var safetyInfo = { copies: 1, lastMirrorAt: null, restorePoints: 0 };
+  var recoveredFrom = null;
+
+  function mirror(json) {
+    var at = nowISO();
+    idbPut("safety", { k: "current", json: json, at: at })
+      .then(function () { safetyInfo.lastMirrorAt = at; safetyInfo.copies = 2; })
+      .catch(function (e) { console.warn("mirror failed", e); });
+    idbPut("safety", { k: "snap-" + Date.now(), json: json, at: at })
+      .then(trimSnaps)
+      .catch(function () { });
+  }
+  function trimSnaps() {
+    return idbAll("safety").then(function (rows) {
+      var snaps = rows.filter(function (r) { return /^snap-/.test(r.k); })
+        .sort(function (a, b) { return a.k < b.k ? 1 : -1; });
+      safetyInfo.restorePoints = Math.min(snaps.length, SNAP_KEEP);
+      snaps.slice(SNAP_KEEP).forEach(function (s) { idbDel("safety", s.k); });
+    });
+  }
+  // On boot: if the primary store is empty/broken but the mirror has orders, put them back.
+  function bootRecover() {
+    return idbAll("safety").then(function (rows) {
+      var cur = rows.filter(function (r) { return r.k === "current"; })[0];
+      safetyInfo.restorePoints = rows.filter(function (r) { return /^snap-/.test(r.k); }).length;
+      if (cur) { safetyInfo.copies = 2; safetyInfo.lastMirrorAt = cur.at; }
+      if (live().length || !cur || !cur.json) return;
+      var p;
+      try { p = JSON.parse(cur.json); } catch (e) { return; }
+      if (!p || !Array.isArray(p.orders)) return;
+      var n = p.orders.filter(function (o) { return !o.deletedAt; }).length;
+      if (!n) return;
+      DB = p;
+      try { localStorage.setItem(K_ORDERS, cur.json); } catch (e) { }
+      recoveredFrom = n;
+      router();
+    }).catch(function () { });
+  }
+  function renderRecoveredBar() {
+    if (!recoveredFrom) return;
+    var b = el("div", "ostrip good");
+    b.appendChild(el("span", null, "✓ Your " + recoveredFrom + " orders were restored from the backup copy on this device."));
+    root.appendChild(b);
+  }
+  function safetyLine() {
+    var n = live().filter(function (o) { return o.kind === "order"; }).length;
+    var box = el("div", "osafety");
+    if (!n) { box.appendChild(el("span", null, "No orders saved yet.")); return box; }
+    var parts = ["✓ " + n + " order" + (n === 1 ? "" : "s") + " saved in " + safetyInfo.copies + " place" + (safetyInfo.copies === 1 ? "" : "s") + " on this device"];
+    if (safetyInfo.restorePoints) parts.push(safetyInfo.restorePoints + " restore points");
+    parts.push(DB.meta.lastBackupAt ? "last copy saved " + fmtLong(DB.meta.lastBackupAt.slice(0, 10)) : "no copy saved off this device yet");
+    box.appendChild(el("span", null, parts.join(" · ")));
+    return box;
   }
 
   var urlCache = {};
@@ -306,7 +409,7 @@
   document.body.insertBefore(root, document.body.firstChild);
   var invoiceScreen = $("screen-invoice");
 
-  var state = { tab: "list", tickerMonth: monthKey(todayISO()), calMonth: monthKey(todayISO()), justSaved: null, filter: null, lightbox: null };
+  var state = { tab: "list", tickerMonth: monthKey(todayISO()), calMonth: monthKey(todayISO()), justSaved: null, justSavedId: null, filter: null, monthFilter: null, lightbox: null };
 
   function go(hash) { location.hash = hash; }
   function showInvoice(on) {
@@ -338,55 +441,75 @@
     root.innerHTML = "";
     window.scrollTo(0, 0);
 
-    var atHome = !parts.length || parts[0] === "calendar";
-    // the "✓ Saved" note survives the hop back to home, then clears when she goes elsewhere
-    if (!atHome) { state.justSaved = null; state.justSavedId = null; }
+    var atOrders = parts[0] === "orders";
+    // the "✓ Saved" note survives the hop back to the list, then clears when she goes elsewhere
+    if (!atOrders) { state.justSaved = null; state.justSavedId = null; }
 
-    if (!parts.length) { state.tab = "list"; renderHome(); }
-    else if (parts[0] === "calendar") { state.tab = "calendar"; renderHome(); }
+    if (!parts.length) renderLanding();
+    else if (parts[0] === "orders") { state.tab = parts[1] === "calendar" ? "calendar" : "list"; renderOrders(); }
+    else if (parts[0] === "calendar") { state.tab = "calendar"; renderOrders(); } // legacy link
     else if (parts[0] === "new") renderForm(null);
     else if (parts[0] === "edit" && parts[1]) renderForm(getOrder(parts[1]));
     else if (parts[0] === "order" && parts[1]) renderDetail(getOrder(parts[1]));
+    else if (parts[0] === "money") renderMoney();
     else if (parts[0] === "settings") renderSettings();
-    else { state.tab = "list"; renderHome(); }
+    else renderLanding();
   }
 
-  /* ================= HOME ================= */
-  function renderHome() {
+  /* ================= LANDING (the two-button front door) ================= */
+  function renderLanding() {
     var head = el("div", "ohead");
     var logo = el("img"); logo.src = "logo.png"; logo.alt = "";
     head.appendChild(logo);
     head.appendChild(el("h1", null, "Blossoms by Michele"));
     root.appendChild(head);
 
+    renderRecoveredBar();
     renderBackupBar();
     renderRecoveryCard();
     renderStandaloneBar();
 
-    root.appendChild(buildTicker());
+    root.appendChild(buildHero());
 
-    var bNew = el("button", "obtn obtn-primary", "➕  New Order");
+    var bNew = el("button", "obtn obtn-primary obtn-xl", "➕  New Order");
     bNew.onclick = function () { go("#/new"); };
     root.appendChild(bNew);
 
-    var bInv = el("button", "obtn obtn-secondary", "📄  Make an Invoice");
+    var bInv = el("button", "obtn obtn-secondary obtn-xl", "📄  Make an Invoice");
     bInv.onclick = function () { go("#/invoice"); };
     root.appendChild(bInv);
+
+    var n = live().filter(function (o) { return o.kind === "order"; }).length;
+    var bList = el("button", "obtn obtn-plain", "📋  See all my orders" + (n ? "  (" + n + ")" : ""));
+    bList.onclick = function () { go("#/orders"); };
+    root.appendChild(bList);
+
+    var bMoney = el("button", "obtn obtn-plain", "💰  Money month by month");
+    bMoney.onclick = function () { go("#/money"); };
+    root.appendChild(bMoney);
+
+    // constant reassurance that nothing is lost
+    root.appendChild(safetyLine());
+
+    var setBtn = el("button", "obtn obtn-plain", "⚙️  Backup & Settings");
+    setBtn.onclick = function () { go("#/settings"); };
+    root.appendChild(setBtn);
+  }
+
+  /* ================= ORDERS (list + calendar) ================= */
+  function renderOrders() {
+    root.appendChild(topbar("Back", "#/"));
 
     var tabs = el("div", "otabs");
     var t1 = el("button", "otab" + (state.tab === "list" ? " active" : ""), "📋 List");
     var t2 = el("button", "otab" + (state.tab === "calendar" ? " active" : ""), "📅 Calendar");
-    t1.onclick = function () { go("#/"); };
-    t2.onclick = function () { go("#/calendar"); };
+    t1.onclick = function () { go("#/orders"); };
+    t2.onclick = function () { go("#/orders/calendar"); };
     tabs.appendChild(t1); tabs.appendChild(t2);
     root.appendChild(tabs);
 
-    if (state.justSaved) {
-      var s = el("div", "osaved", "✓ Saved — " + state.justSaved);
-      root.appendChild(s);
-    }
+    if (state.justSaved) root.appendChild(el("div", "osaved", "✓ Saved — " + state.justSaved));
 
-    // chase strip
     var od = overdueList();
     if (od.length) {
       var owed = od.reduce(function (a, o) { return a + Math.max(0, balance(o) || 0); }, 0);
@@ -396,23 +519,117 @@
       root.appendChild(strip);
     }
 
-    if (state.filter) {
+    if (state.filter || state.monthFilter) {
       var fs = el("div", "ostrip amber tappable");
-      fs.appendChild(el("span", null, state.filter === "overdue" ? "Showing only orders that still owe you." : "Showing only orders that need a price."));
+      var txt = state.monthFilter ? "Showing " + monthLabel(state.monthFilter) + " only."
+        : state.filter === "noprice" ? "Showing only orders that need a price."
+        : "Showing only orders that still owe you.";
+      fs.appendChild(el("span", null, txt));
       var x = el("button", null, "Show all");
-      x.onclick = function (e) { e.stopPropagation(); state.filter = null; router(); };
+      x.onclick = function (e) { e.stopPropagation(); state.filter = null; state.monthFilter = null; router(); };
       fs.appendChild(x);
       root.appendChild(fs);
     }
 
     if (state.tab === "list") renderList(); else renderCalendar();
 
-    var n = live().filter(function (o) { return o.kind === "order"; }).length;
-    root.appendChild(el("div", "ofoot", n ? "✓ " + n + " order" + (n === 1 ? "" : "s") + " saved on this device" : ""));
+    var bNew = el("button", "obtn obtn-primary", "➕  New Order");
+    bNew.onclick = function () { go("#/new"); };
+    root.appendChild(bNew);
+  }
 
-    var setBtn = el("button", "obtn obtn-plain", "⚙️ Backup & Settings");
-    setBtn.onclick = function () { go("#/settings"); };
-    root.appendChild(setBtn);
+  /* The front-door numbers: what's booked ahead vs what's actually landed. */
+  function buildHero() {
+    var fb = futureBooked(), got = receivedAllTime(), oe = owedEverywhere();
+    var box = el("div", "oticker ohero");
+
+    var split = el("div", "ohero-split");
+
+    // long money strings must shrink rather than clip
+    function num(cents) {
+      var txt = money(cents), n = el("div", "ohero-num", txt);
+      var L = txt.length;
+      n.style.fontSize = L > 10 ? "23px" : L > 8 ? "27px" : L > 6 ? "31px" : "34px";
+      return n;
+    }
+
+    var a = el("div", "ohero-half");
+    a.appendChild(el("div", "otick-label", "COMING UP"));
+    a.appendChild(num(fb.value));
+    a.appendChild(el("div", "ohero-sub", fb.count + " order" + (fb.count === 1 ? "" : "s") + " booked"));
+    split.appendChild(a);
+
+    var b = el("div", "ohero-half");
+    b.appendChild(el("div", "otick-label", "RECEIVED"));
+    b.appendChild(num(got));
+    b.appendChild(el("div", "ohero-sub", "paid to you so far"));
+    split.appendChild(b);
+
+    box.appendChild(split);
+
+    if (oe.total > 0) {
+      var strip = el("div", "ostrip tappable");
+      strip.appendChild(el("span", null, "💰 Still owed to you " + money(oe.total) + " across " + oe.count + " order" + (oe.count === 1 ? "" : "s")));
+      strip.onclick = function () { state.filter = "owed"; state.monthFilter = null; go("#/orders"); };
+      box.appendChild(strip);
+    }
+    if (fb.unpriced > 0) {
+      box.appendChild(el("div", "ohero-note", fb.unpriced + " upcoming order" + (fb.unpriced === 1 ? "" : "s") + " still need a price."));
+    }
+    return box;
+  }
+
+  /* ================= MONEY, MONTH BY MONTH ================= */
+  function renderMoney() {
+    root.appendChild(topbar("Back", "#/"));
+    root.appendChild(el("h2", null, "Money month by month"));
+
+    var months = monthsWithOrders();
+    if (!months.length) {
+      root.appendChild(el("div", "oempty", "No orders yet."));
+      return;
+    }
+    var totV = 0, totR = 0, totO = 0, totN = 0;
+    months.forEach(function (mk) {
+      var st = monthStats(mk);
+      totV += st.worth; totR += st.paidSum; totO += st.owed; totN += st.count;
+    });
+    var sumCard = el("div", "ocard");
+    sumCard.appendChild(el("h3", null, "Everything, all time"));
+    [["Orders", String(totN)], ["Worth", money(totV)], ["Received", money(totR)], ["Still owed", money(totO)]]
+      .forEach(function (r) {
+        var row = el("div", "omoneyrow");
+        row.appendChild(el("span", null, r[0])); row.appendChild(el("b", null, r[1]));
+        sumCard.appendChild(row);
+      });
+    root.appendChild(sumCard);
+
+    var now = monthKey(todayISO());
+    months.forEach(function (mk) {
+      var st = monthStats(mk);
+      var card = el("button", "omonthcard" + (mk === now ? " current" : ""));
+      var top = el("div", "omc-top");
+      top.appendChild(el("span", "omc-name", monthLabel(mk)));
+      // "$0" reads as "you earned nothing"; when nothing is priced yet, say so
+      top.appendChild(el("span", "omc-val", st.worth > 0 ? money(st.worth) : "—"));
+      card.appendChild(top);
+
+      var bar = el("div", "omc-bar");
+      var pct = st.worth > 0 ? Math.max(2, Math.min(100, Math.round((st.paidSum / st.worth) * 100))) : 0;
+      var fill = el("div", "omc-fill"); fill.style.width = pct + "%";
+      bar.appendChild(fill);
+      card.appendChild(bar);
+
+      var meta = el("div", "omc-meta");
+      meta.appendChild(el("span", null, st.count + " order" + (st.count === 1 ? "" : "s")));
+      meta.appendChild(el("span", "omc-got", money(st.paidSum) + " received"));
+      if (st.owed > 0) meta.appendChild(el("span", "omc-owed", money(st.owed) + " owed"));
+      if (st.needPrice > 0) meta.appendChild(el("span", "omc-owed", st.needPrice + " need a price"));
+      card.appendChild(meta);
+
+      card.onclick = function () { state.monthFilter = mk; state.filter = null; go("#/orders"); };
+      root.appendChild(card);
+    });
   }
 
   function buildTicker() {
@@ -482,6 +699,7 @@
   /* ================= LIST ================= */
   function visibleOrders() {
     var all = sorted();
+    if (state.monthFilter) all = all.filter(function (o) { return monthKey(o.eventDate) === state.monthFilter; });
     if (state.filter === "overdue") return all.filter(function (o) { return o.kind === "order" && isOverdue(o); });
     if (state.filter === "owed") return all.filter(function (o) { var b = balance(o); return o.kind === "order" && !o.tentative && b != null && b > 0; });
     if (state.filter === "noprice") return all.filter(function (o) { return o.kind === "order" && grand(o) == null; });
@@ -1155,16 +1373,8 @@
       rb.appendChild(el("span", null, balance(o) <= 0 ? "Paid in full" : "Still owes you"));
       rb.appendChild(el("b", null, money(Math.max(0, balance(o)))));
       mc.appendChild(rb);
-      if (balance(o) > 0) {
-        var settle = el("button", "obtn obtn-plain", "✓ They paid the rest");
-        settle.onclick = function () {
-          var real = getOrder(o.id);
-          real.payments.push({ id: uuid(), cents: balance(real), method: "cash", date: todayISO(), kind: "final" });
-          upsert(real); router();
-        };
-        mc.appendChild(settle);
-      }
     }
+    mc.appendChild(paymentAdder(o));
     d.appendChild(mc);
 
     // where / who
@@ -1195,6 +1405,77 @@
     d.appendChild(bEdit);
 
     root.appendChild(d);
+  }
+
+  /* Record a deposit or a final payment on an order that already exists. */
+  function paymentAdder(o) {
+    var wrap = el("div");
+    var bal = balance(o);
+    var open = el("button", "obtn obtn-primary", "💵 Enter a payment");
+    wrap.appendChild(open);
+
+    var half = o.totalCents != null ? Math.round(o.totalCents / 2) : null;
+    var panel = el("div", "opaypanel"); panel.hidden = true;
+    var method = "zelle";
+
+    var f = el("div", "ofield");
+    f.appendChild(el("label", null, "How much did they pay?"));
+    var mw = el("div", "omoneywrap");
+    mw.appendChild(el("span", "odollar", "$"));
+    var amt = el("input"); amt.type = "text"; amt.setAttribute("inputmode", "decimal");
+    amt.value = bal != null && bal > 0 ? (bal / 100).toString() : (half != null ? (half / 100).toString() : "");
+    mw.appendChild(amt); f.appendChild(mw);
+    panel.appendChild(f);
+
+    // one-tap shortcuts for the two amounts she actually uses
+    var quick = el("div", "ochips"); quick.style.marginBottom = "14px";
+    if (half != null && paid(o) === 0) {
+      var qh = el("button", "ochoice", "Half — " + money(half));
+      qh.onclick = function () { amt.value = (half / 100).toString(); };
+      quick.appendChild(qh);
+    }
+    if (bal != null && bal > 0) {
+      var qb = el("button", "ochoice", "The rest — " + money(bal));
+      qb.onclick = function () { amt.value = (bal / 100).toString(); };
+      quick.appendChild(qb);
+    }
+    if (quick.childNodes.length) panel.appendChild(quick);
+
+    var mf = el("div", "ofield");
+    mf.appendChild(el("label", null, "Paid with"));
+    var chips = el("div", "ochips");
+    METHODS.forEach(function (m) {
+      var b = el("button", "ochoice" + (m.v === method ? " active" : ""), m.label);
+      b.onclick = function () {
+        chips.querySelectorAll(".ochoice").forEach(function (x) { x.classList.remove("active"); });
+        b.classList.add("active"); method = m.v;
+      };
+      chips.appendChild(b);
+    });
+    mf.appendChild(chips);
+    panel.appendChild(mf);
+
+    var save = el("button", "obtn obtn-primary", "✓ Save this payment");
+    save.onclick = function () {
+      var c = parseMoney(amt.value);
+      if (!c) { alert("Type how much they paid."); return; }
+      var real = getOrder(o.id);
+      real.payments.push({
+        id: uuid(), cents: c, method: method, date: todayISO(),
+        kind: real.payments.length ? "final" : "deposit"
+      });
+      upsert(real);
+      router();
+    };
+    panel.appendChild(save);
+
+    var cancel = el("button", "obtn obtn-plain", "Cancel");
+    cancel.onclick = function () { panel.hidden = true; open.hidden = false; };
+    panel.appendChild(cancel);
+
+    wrap.appendChild(panel);
+    open.onclick = function () { panel.hidden = false; open.hidden = true; amt.focus(); };
+    return wrap;
   }
 
   function openLightbox(pid) {
@@ -1381,6 +1662,38 @@
     c2.appendChild(fi);
     root.appendChild(c2);
 
+    var cR = el("div", "ocard");
+    cR.appendChild(el("h3", null, "Go back to an earlier version"));
+    cR.appendChild(el("p", null, "Every time you save an order, this app keeps a copy. If something ever looks wrong, you can go back."));
+    var rlist = el("div"); rlist.style.marginTop = "10px";
+    cR.appendChild(rlist);
+    idbAll("safety").then(function (rows) {
+      var snaps = rows.filter(function (r) { return /^snap-/.test(r.k); })
+        .sort(function (a, b) { return a.k < b.k ? 1 : -1; }).slice(0, 12);
+      if (!snaps.length) { rlist.appendChild(el("div", "ohint", "No copies yet.")); return; }
+      snaps.forEach(function (s) {
+        var n = 0;
+        try { n = JSON.parse(s.json).orders.filter(function (o) { return !o.deletedAt; }).length; } catch (e) { }
+        var d = new Date(s.at);
+        var b = el("button", "obtn obtn-plain");
+        b.textContent = "↩︎ " + d.toLocaleString() + " — " + n + " orders";
+        b.style.fontSize = "16px";
+        b.onclick = function () {
+          if (!confirm("Go back to the copy from " + d.toLocaleString() + "?\n\nIt has " + n + " orders. Your current list will be saved as another copy first.")) return;
+          snapshot();
+          mirror(JSON.stringify(DB)); // keep "now" recoverable too
+          try {
+            DB = JSON.parse(s.json);
+            localStorage.setItem(K_ORDERS, s.json);
+            alert("Done. You now have " + live().length + " orders.");
+            go("#/");
+          } catch (e) { alert("That copy could not be read."); }
+        };
+        rlist.appendChild(b);
+      });
+    });
+    root.appendChild(cR);
+
     var c3 = el("div", "ocard");
     c3.appendChild(el("h3", null, "Storage"));
     var st = el("p", null, "Checking…");
@@ -1411,6 +1724,7 @@
   if (navigator.storage && navigator.storage.persist) { try { navigator.storage.persist(); } catch (e) { } }
   window.addEventListener("hashchange", function () { router(); });
   router();
+  bootRecover().then(function () { if (!location.hash || location.hash === "#/") router(); });
 
   // expose a tiny surface for testing only
   window.BlossomsOrders = {
