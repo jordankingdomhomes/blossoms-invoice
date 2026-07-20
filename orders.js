@@ -459,7 +459,16 @@
 
     if (parts[0] === "invoice") {
       showInvoice(true);
-      mountInvoiceChrome(new URLSearchParams(q).get("from"));
+      var qp = new URLSearchParams(q);
+      mountInvoiceChrome(qp.get("from"));
+      var invId = qp.get("inv");
+      if (invId) {
+        var rec = getInvoice(invId);
+        if (rec) { INV.currentId = rec.id; writeInvoiceForm(rec); }
+      } else if (qp.get("new")) {
+        INV.currentId = null;                      // a genuinely blank one
+        writeInvoiceForm({ date: todayISO(), items: [] });
+      }
       return;
     }
     showInvoice(false);
@@ -477,6 +486,7 @@
     else if (parts[0] === "edit" && parts[1]) renderForm(getOrder(parts[1]));
     else if (parts[0] === "order" && parts[1]) renderDetail(getOrder(parts[1]));
     else if (parts[0] === "money") renderMoney();
+    else if (parts[0] === "invoices") renderInvoices();
     else if (parts[0] === "settings") renderSettings();
     else renderLanding();
   }
@@ -504,8 +514,13 @@
     root.appendChild(bNew);
 
     var bInv = el("button", "obtn obtn-secondary obtn-xl", "📄  Make an Invoice");
-    bInv.onclick = function () { go("#/invoice"); };
+    bInv.onclick = function () { INV.currentId = null; go("#/invoice?new=1"); };
     root.appendChild(bInv);
+
+    var nInv = liveInvoices().length;
+    var bMyInv = el("button", "obtn obtn-plain", "🗂  My Invoices" + (nInv ? "  (" + nInv + ")" : ""));
+    bMyInv.onclick = function () { go("#/invoices"); };
+    root.appendChild(bMyInv);
 
     var n = live().filter(function (o) { return o.kind === "order"; }).length;
     var bList = el("button", "obtn obtn-plain", "📋  See all my orders" + (n ? "  (" + n + ")" : ""));
@@ -1613,9 +1628,15 @@
   document.addEventListener("click", function (e) {
     var t = e.target;
     if (!t || !t.closest) return;
-    if (t.closest("#makeBtn") && invoiceFrom) {
-      var o = getOrder(invoiceFrom);
-      if (o) { o.invoicedAt = nowISO(); upsert(o); }
+    if (t.closest("#makeBtn")) {
+      if (invoiceFrom) {
+        var o = getOrder(invoiceFrom);
+        if (o) { o.invoicedAt = nowISO(); upsert(o); }
+      }
+      // make sure the finished invoice is stored, and note that a PDF went out
+      autosaveInvoice();
+      var rec = INV.currentId ? getInvoice(INV.currentId) : null;
+      if (rec) { rec.pdfAt = nowISO(); rec.updatedAt = nowISO(); saveInvoices(); }
     }
   }, true);
 
@@ -1874,6 +1895,167 @@
     ].forEach(function (t) { ul.appendChild(el("li", null, t)); });
     c4.appendChild(ul);
     root.appendChild(c4);
+  }
+
+  /* ================= SAVED INVOICES =================
+     The invoice screen is a closed IIFE, so we read and write it through the DOM
+     (same approach as the order handoff). Every keystroke autosaves, so an invoice
+     can be reopened and changed instead of rebuilt from scratch. */
+  var K_INV = "blossoms.invoices.v1";
+  var INV = { list: [], currentId: null };
+
+  function loadInvoices() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(K_INV) || "null");
+      if (raw && Array.isArray(raw.invoices)) INV.list = raw.invoices;
+    } catch (e) { }
+  }
+  function saveInvoices() {
+    try { localStorage.setItem(K_INV, JSON.stringify({ v: 1, invoices: INV.list })); } catch (e) { }
+    mirror(JSON.stringify({ v: 1, invoices: INV.list, kind: "invoices" }));  // ride the same fail-safe
+  }
+  function liveInvoices() {
+    return INV.list.filter(function (i) { return !i.deletedAt; })
+      .sort(function (a, b) { return (b.updatedAt || "") < (a.updatedAt || "") ? -1 : 1; });
+  }
+  function getInvoice(id) { for (var i = 0; i < INV.list.length; i++) if (INV.list[i].id === id) return INV.list[i]; return null; }
+
+  function ival(id) { var e = $(id); return e ? e.value : ""; }
+  function readInvoiceForm() {
+    var items = [];
+    document.querySelectorAll("#items .item").forEach(function (it) {
+      var d = it.querySelector(".idesc"), p = it.querySelector(".iprice");
+      if (!d || !p) return;
+      if (d.value.trim() || p.value.trim()) items.push({ desc: d.value, price: p.value });
+    });
+    var sp = $("segPickup"), sd = $("segDelivery");
+    return {
+      date: ival("deliveryDate"), billTo: ival("billTo"),
+      fulfillment: (sp && sp.classList.contains("active")) ? "pickup"
+        : (sd && sd.classList.contains("active")) ? "delivery" : "",
+      address: ival("addrFull"), items: items, deposit: ival("deposit"),
+      payDepTerms: ival("payDepTerms"), payRemainder: ival("payRemainder"),
+      payVenmo: ival("payVenmo"), payZelle: ival("payZelle"), payCard: ival("payCard"),
+      sigName: ival("sigName"), sigEmail: ival("sigEmail"), sigPhone: ival("sigPhone")
+    };
+  }
+  function invoiceIsEmpty(f) {
+    return !f.billTo.trim() && !f.items.length;
+  }
+  function invoiceTotalCents(f) {
+    return (f.items || []).reduce(function (a, it) { return a + (parseMoney(it.price) || 0); }, 0);
+  }
+
+  function writeInvoiceForm(f) {
+    invLoading = true;
+    setVal("deliveryDate", f.date || todayISO());
+    setVal("billTo", f.billTo || "");
+    if (f.fulfillment === "pickup") { var sp = $("segPickup"); if (sp) sp.click(); }
+    else if (f.fulfillment === "delivery") {
+      var sd = $("segDelivery"); if (sd) sd.click();
+      if (f.address) setVal("addrFull", f.address);
+    }
+    // make sure there are enough item rows, then fill them (extras are blanked, and
+    // the invoice's own code ignores blank rows)
+    var want = Math.max(1, (f.items || []).length);
+    var addBtn = $("addItem");
+    var guard = 0;
+    while (document.querySelectorAll("#items .item").length < want && guard++ < 40) addBtn.click();
+    var rows = document.querySelectorAll("#items .item");
+    for (var i = 0; i < rows.length; i++) {
+      var it = (f.items || [])[i] || { desc: "", price: "" };
+      var d = rows[i].querySelector(".idesc"), p = rows[i].querySelector(".iprice");
+      if (d) { d.value = it.desc; d.dispatchEvent(new Event("input", { bubbles: true })); }
+      if (p) { p.value = it.price; p.dispatchEvent(new Event("input", { bubbles: true })); }
+    }
+    setVal("deposit", f.deposit || "");
+    ["payDepTerms", "payRemainder", "payVenmo", "payZelle", "payCard", "sigName", "sigEmail", "sigPhone"]
+      .forEach(function (k) { if (f[k] != null && f[k] !== "") setVal(k, f[k]); });
+    invLoading = false;
+  }
+
+  var invLoading = false, invSaveTimer = null;
+  function autosaveInvoice() {
+    if (invLoading) return;
+    if (!invoiceScreen || invoiceScreen.hidden) return;
+    var f = readInvoiceForm();
+    if (invoiceIsEmpty(f) && !INV.currentId) return;      // nothing worth keeping yet
+    var rec = INV.currentId ? getInvoice(INV.currentId) : null;
+    if (!rec) {
+      rec = { id: uuid(), createdAt: nowISO(), deletedAt: null, pdfAt: null, orderId: invoiceFrom || null };
+      INV.list.push(rec);
+      INV.currentId = rec.id;
+    }
+    Object.assign(rec, f);
+    rec.updatedAt = nowISO();
+    rec.totalCents = invoiceTotalCents(f);
+    saveInvoices();
+  }
+  function scheduleInvoiceSave() {
+    clearTimeout(invSaveTimer);
+    invSaveTimer = setTimeout(autosaveInvoice, 700);
+  }
+  // one listener on the whole invoice screen catches every field
+  document.addEventListener("input", function (e) {
+    if (!invoiceScreen || invoiceScreen.hidden) return;
+    if (e.target && e.target.closest && e.target.closest("#screen-invoice")) scheduleInvoiceSave();
+  }, true);
+  document.addEventListener("click", function (e) {
+    if (!invoiceScreen || invoiceScreen.hidden) return;
+    if (e.target && e.target.closest && e.target.closest("#segPickup,#segDelivery,#addItem,.item .rm")) scheduleInvoiceSave();
+  }, true);
+
+  /* ---- the saved-invoice list ---- */
+  function renderInvoices() {
+    root.appendChild(topbar("Back", "#/"));
+    root.appendChild(el("h2", null, "My Invoices"));
+
+    var list = liveInvoices();
+    if (!list.length) {
+      var e0 = el("div", "oempty");
+      e0.appendChild(el("h3", null, "No invoices yet"));
+      e0.appendChild(el("p", null, "Every invoice you make is kept here, so you can open it again and change it."));
+      var nb = el("button", "obtn obtn-primary", "📄 Make an Invoice");
+      nb.onclick = function () { INV.currentId = null; go("#/invoice?new=1"); };
+      e0.appendChild(nb);
+      root.appendChild(e0);
+      return;
+    }
+
+    var nb2 = el("button", "obtn obtn-primary", "📄 Make a new Invoice");
+    nb2.onclick = function () { INV.currentId = null; go("#/invoice?new=1"); };
+    root.appendChild(nb2);
+
+    list.forEach(function (inv) {
+      var card = el("div", "orow");
+      var rail = el("div", "orail");
+      var d = dateOf(inv.date);
+      rail.appendChild(el("div", "odow", d ? DOW[d.getDay()].toUpperCase() : ""));
+      rail.appendChild(el("div", "oday", d ? String(d.getDate()) : "—"));
+      card.appendChild(rail);
+
+      var body = el("div", "obody");
+      body.appendChild(el("div", "oname", inv.billTo || "No name"));
+      var what = (inv.items && inv.items[0] && inv.items[0].desc || "").replace(/\s+/g, " ").trim();
+      body.appendChild(el("div", "owhat", what ? (what.length > 52 ? what.slice(0, 52) + "…" : what) : "—"));
+      var meta = el("div", "ometa");
+      if (inv.totalCents) meta.appendChild(el("span", "ototal", money(inv.totalCents)));
+      meta.appendChild(el("span", null, inv.pdfAt ? "Sent " + fmtShort(inv.pdfAt.slice(0, 10)) : "Not sent yet"));
+      body.appendChild(meta);
+      card.appendChild(body);
+
+      card.onclick = function () { go("#/invoice?inv=" + inv.id); };
+      root.appendChild(card);
+
+      var del = el("button", "obtn obtn-danger", "🗑️ Delete this invoice");
+      del.style.marginTop = "-4px";
+      del.onclick = function (ev) {
+        ev.stopPropagation();
+        if (!confirm("Delete the invoice for " + (inv.billTo || "this customer") + "?")) return;
+        inv.deletedAt = nowISO(); saveInvoices(); router();
+      };
+      root.appendChild(del);
+    });
   }
 
   /* ================= CLOUD SYNC =================
@@ -2191,6 +2373,7 @@
 
   /* ================= boot ================= */
   load();
+  loadInvoices();
   loadCloud();
   // Carry her existing orders over from her Notes, once per device.
   // Keyed on its own marker (not everHadOrders) so a device that already visited

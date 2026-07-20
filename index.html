@@ -269,12 +269,13 @@
           <div class="hint" style="margin-left:0">These are already filled in with your usual info. Tap a box to change it — the arrow ▾ shows your saved choices.</div>
 
           <label>Deposit terms</label>
-          <input list="depTermsList" id="payDepTerms" value="$250 Deposit Due Upon Booking">
+          <input list="depTermsList" id="payDepTerms" value="50% Deposit Due Upon Booking">
           <datalist id="depTermsList">
+            <option value="50% Deposit Due Upon Booking">
+            <option value="50% Non-Refundable Deposit Due Upon Booking">
             <option value="$250 Deposit Due Upon Booking">
             <option value="$100 Deposit Due Upon Booking">
             <option value="$500 Deposit Due Upon Booking">
-            <option value="50% Deposit Due Upon Booking">
           </datalist>
 
           <div class="fieldgap"><label>When the rest is due</label>
@@ -754,8 +755,8 @@
     render();
   })();
   </script>
-  <link rel="stylesheet" href="orders.css?v=13">
-  <script src="seed-orders.js?v=13"></script>
-  <script src="orders.js?v=13"></script>
+  <link rel="stylesheet" href="orders.css?v=14">
+  <script src="seed-orders.js?v=14"></script>
+  <script src="orders.js?v=14"></script>
 </body>
 </html>
