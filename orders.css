@@ -326,6 +326,7 @@ body{
 .odrop small{font-size:14px; color:var(--o-muted); font-weight:600}
 .odrop.over{background:var(--o-rose-soft)}
 .ophotos{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px}
+.ovidmark{display:flex; align-items:center; justify-content:center; font-size:26px; background:#f2ece7}
 .ovideos{display:flex; flex-direction:column; gap:12px; margin-top:12px}
 .ovideos video{width:100%; border-radius:14px; background:#000; max-height:420px}
 .odoclink{justify-content:flex-start; text-align:left; margin-top:10px}

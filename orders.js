@@ -766,7 +766,7 @@
     yc.appendChild(el("h3", null, "Year by year — tap a year"));
     yc.appendChild(barChart(years.map(function (y) {
       return { label: y, value: byYear[y].total, selected: y === state.completedYear,
-        onClick: function () { state.completedYear = y; state.completedMonth = null; router(); } };
+        onClick: function () { state.completedYear = y; state.completedMonth = null; state.completedSearch = ""; router(); } };
     }), { height: 168, slot: 70, maxBar: 60 }));
     root.appendChild(yc);
 
@@ -778,24 +778,78 @@
     mc.appendChild(el("h3", null, state.completedYear + " — " + money(yrTotal) + " · tap a month"));
     mc.appendChild(barChart(byMonth.map(function (m, i) {
       return { label: MN[i], value: m.total, selected: state.completedMonth === (i + 1),
-        onClick: function () { state.completedMonth = (state.completedMonth === (i + 1)) ? null : (i + 1); router(); } };
+        onClick: function () { state.completedSearch = ""; state.completedShowAll = false; state.completedMonth = (state.completedMonth === (i + 1)) ? null : (i + 1); router(); } };
     }), { height: 170, slot: 30, maxBar: 24 }));
     root.appendChild(mc);
 
-    // ---- drill-in list ----
-    if (state.completedMonth) {
-      var mo = state.completedMonth;
-      var list = completedOrders().filter(function (o) {
-        return o.eventDate.slice(0, 4) === state.completedYear && parseInt(o.eventDate.slice(5, 7), 10) === mo;
-      }).sort(function (a, b) { return a.eventDate < b.eventDate ? -1 : 1; });
-      var mtot = list.reduce(function (a, o) { return a + (grand(o) || 0); }, 0);
+    // ---- search + browsable list of every finished order ----
+    var sf = el("div", "ofield");
+    var si = el("input"); si.type = "search"; si.placeholder = "🔍 Find a customer by name";
+    si.value = state.completedSearch || "";
+    si.setAttribute("autocapitalize", "off"); si.setAttribute("autocorrect", "off"); si.setAttribute("spellcheck", "false");
+    si.setAttribute("enterkeyhint", "search");
+    sf.appendChild(si);
+    root.appendChild(sf);
+
+    var listWrap = el("div");
+    root.appendChild(listWrap);
+
+    var ALL = completedOrders().sort(function (a, b) { return a.eventDate < b.eventDate ? 1 : -1; }); // newest first
+    var CAP = 60;
+
+    function fillList() {
+      listWrap.innerHTML = "";
+      var q = (state.completedSearch || "").trim().toLowerCase();
+      var list, header, capped = false;
+
+      if (q) {
+        list = ALL.filter(function (o) { return ((o.name || "") + " " + (o.what || "")).toLowerCase().indexOf(q) >= 0; });
+        header = list.length + " match" + (list.length === 1 ? "" : "es") + ' for "' + q + '"';
+      } else if (state.completedMonth) {
+        list = ALL.filter(function (o) { return o.eventDate.slice(0, 4) === state.completedYear && parseInt(o.eventDate.slice(5, 7), 10) === state.completedMonth; });
+        var mtot = list.reduce(function (a, o) { return a + (grand(o) || 0); }, 0);
+        header = MN[state.completedMonth - 1] + " " + state.completedYear + " — " + list.length + " order" + (list.length === 1 ? "" : "s") + ", " + money(mtot);
+      } else if (state.completedShowAll) {
+        list = ALL;
+        header = "All " + ALL.length + " finished orders — newest first";
+      } else {
+        list = ALL.slice(0, CAP);
+        capped = ALL.length > CAP;
+        header = "Your " + list.length + " most recent — type a name to find any of the " + ALL.length;
+      }
+
       var strip = el("div", "ostrip good");
-      strip.appendChild(el("span", null, MN[mo - 1] + " " + state.completedYear + " — " + list.length + " order" + (list.length === 1 ? "" : "s") + ", " + money(mtot)));
-      root.appendChild(strip);
-      list.forEach(function (o) { root.appendChild(orderRow(o)); });
-    } else {
-      root.appendChild(el("div", "ofoot", "Tap a month above to see those orders."));
+      strip.appendChild(el("span", null, header));
+      if (state.completedMonth && !q) {
+        var clr = el("button", null, "Show all");
+        clr.onclick = function () { state.completedMonth = null; router(); };
+        strip.appendChild(clr);
+      }
+      listWrap.appendChild(strip);
+
+      var curMonth = null, showMonthHeaders = !q; // group by month unless searching
+      list.forEach(function (o) {
+        if (showMonthHeaders) {
+          var mk = o.eventDate.slice(0, 7);
+          if (mk !== curMonth) { curMonth = mk; listWrap.appendChild(el("div", "omonth", monthLabel(mk).toUpperCase())); }
+        }
+        listWrap.appendChild(orderRow(o));
+      });
+
+      if (!list.length) listWrap.appendChild(el("div", "oempty", "No finished orders match that."));
+      if (capped) {
+        var more = el("button", "obtn obtn-plain", "⌄ Show all " + ALL.length + " orders");
+        more.onclick = function () { state.completedShowAll = true; fillList(); };
+        listWrap.appendChild(more);
+      }
     }
+
+    var deb;
+    si.addEventListener("input", function () {
+      state.completedSearch = si.value;
+      clearTimeout(deb); deb = setTimeout(fillList, 160);
+    });
+    fillList();
   }
 
   function buildTicker() {
@@ -974,8 +1028,11 @@
     row.appendChild(body);
 
     if (o.thumbUrls && o.thumbUrls.length) {          // photos carried over from her Notes
-      var im2 = el("img", "othumb"); im2.alt = ""; im2.src = o.thumbUrls[0];
+      var im2 = el("img", "othumb"); im2.alt = ""; im2.loading = "lazy"; im2.src = o.thumbUrls[0];
       row.appendChild(im2);
+    } else if (o.videoUrls && o.videoUrls.length) {   // video-only order still gets a marker
+      var vm = el("div", "othumb ovidmark", "🎬");
+      row.appendChild(vm);
     } else if (o.photos && o.photos.length) {          // photos she added in the app
       var img = el("img", "othumb"); img.alt = "";
       thumbURL(o.photos[0]).then(function (u) { if (u) img.src = u; });
