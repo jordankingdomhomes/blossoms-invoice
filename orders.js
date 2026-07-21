@@ -490,6 +490,7 @@
     else if (parts[0] === "edit" && parts[1]) renderForm(getOrder(parts[1]));
     else if (parts[0] === "order" && parts[1]) renderDetail(getOrder(parts[1]));
     else if (parts[0] === "money") renderMoney();
+    else if (parts[0] === "completed") renderCompleted();
     else if (parts[0] === "invoices") renderInvoices();
     else if (parts[0] === "settings") renderSettings();
     else renderLanding();
@@ -531,8 +532,8 @@
     bList.onclick = function () { go("#/orders"); };
     root.appendChild(bList);
 
-    var bMoney = el("button", "obtn obtn-plain", "💰  Money month by month");
-    bMoney.onclick = function () { go("#/money"); };
+    var bMoney = el("button", "obtn obtn-plain", "📊  Revenue &amp; completed orders");
+    bMoney.onclick = function () { go("#/completed"); };
     root.appendChild(bMoney);
 
     var setBtn = el("button", "obtn obtn-plain", "⚙️  Backup & Settings");
@@ -622,8 +623,8 @@
     a.appendChild(el("div", "ohero-tap", "Tap to see them ›"));
 
     b.style.cursor = "pointer";
-    b.onclick = function () { state.filter = "received"; state.monthFilter = null; go("#/orders"); };
-    b.appendChild(el("div", "ohero-tap", "Tap to see them ›"));
+    b.onclick = function () { go("#/completed"); };
+    b.appendChild(el("div", "ohero-tap", "See the charts ›"));
 
     return box;
   }
@@ -679,6 +680,122 @@
       card.onclick = function () { state.monthFilter = mk; state.filter = null; go("#/orders"); };
       root.appendChild(card);
     });
+  }
+
+  /* ================= COMPLETED + REVENUE CHARTS ================= */
+  function moneyShort(c) {
+    if (c == null) return "$0";
+    var d = c / 100;
+    if (d >= 1000) { var k = d / 1000; return "$" + (k >= 10 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, "")) + "k"; }
+    return "$" + Math.round(d);
+  }
+  function completedOrders() { return live().filter(function (o) { return o.kind === "order" && o.done; }); }
+  function completedByYear() {
+    var y = {};
+    completedOrders().forEach(function (o) {
+      var yr = o.eventDate.slice(0, 4); if (!/^\d{4}$/.test(yr)) return;
+      (y[yr] = y[yr] || { count: 0, total: 0 }); y[yr].count++; y[yr].total += grand(o) || 0;
+    });
+    return y;
+  }
+  function completedByMonth(year) {
+    var m = []; for (var i = 0; i < 12; i++) m.push({ count: 0, total: 0 });
+    completedOrders().forEach(function (o) {
+      if (o.eventDate.slice(0, 4) !== year) return;
+      var mo = parseInt(o.eventDate.slice(5, 7), 10) - 1;
+      if (mo < 0 || mo > 11) return;
+      m[mo].count++; m[mo].total += grand(o) || 0;
+    });
+    return m;
+  }
+
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs) { var e = document.createElementNS(SVGNS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  // single-series bar chart; items: [{label,value,selected,onClick}]
+  function barChart(items, opts) {
+    opts = opts || {};
+    var n = items.length, H = opts.height || 172;
+    var padT = 24, padB = 30, padX = 8;
+    var W = Math.max(opts.width || 340, n * (opts.slot || 30));
+    var innerH = H - padT - padB;
+    var max = Math.max.apply(null, items.map(function (i) { return i.value || 0; }).concat([1]));
+    var slot = (W - padX * 2) / n, bw = Math.min(opts.maxBar || 44, slot * 0.6);
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, class: "obars", preserveAspectRatio: "xMidYMid meet" });
+    // baseline
+    svg.appendChild(svgEl("line", { x1: padX, y1: padT + innerH + .5, x2: W - padX, y2: padT + innerH + .5, class: "obaseline" }));
+    items.forEach(function (it, i) {
+      var x = padX + slot * i + slot / 2;
+      var h = it.value > 0 ? Math.max(3, innerH * (it.value / max)) : 0;
+      var y = padT + innerH - h;
+      if (it.onClick) {
+        var hit = svgEl("rect", { x: padX + slot * i, y: padT, width: slot, height: innerH + 6, fill: "transparent" });
+        hit.style.cursor = "pointer"; hit.addEventListener("click", it.onClick); svg.appendChild(hit);
+      }
+      if (h > 0) svg.appendChild(svgEl("rect", { x: x - bw / 2, y: y, width: bw, height: h, rx: 5, class: "obar" + (it.selected ? " sel" : "") }));
+      if (it.value > 0) {
+        var v = svgEl("text", { x: x, y: y - 6, class: "obar-val" }); v.textContent = moneyShort(it.value); svg.appendChild(v);
+      }
+      var lab = svgEl("text", { x: x, y: H - 10, class: "obar-lab" + (it.selected ? " sel" : "") }); lab.textContent = it.label; svg.appendChild(lab);
+    });
+    return svg;
+  }
+
+  function renderCompleted() {
+    root.appendChild(topbar("Back", "#/"));
+    root.appendChild(el("h2", null, "Completed Orders"));
+
+    var byYear = completedByYear();
+    var years = Object.keys(byYear).sort();
+    if (!years.length) {
+      root.appendChild(el("div", "oempty", "No finished orders yet. When you finish an order, tap the date circle to mark it done."));
+      return;
+    }
+    // pick a sensible selected year
+    if (!state.completedYear || years.indexOf(state.completedYear) < 0) state.completedYear = years[years.length - 1];
+
+    var grand2 = 0, cnt = 0;
+    years.forEach(function (y) { grand2 += byYear[y].total; cnt += byYear[y].count; });
+    var head = el("div", "ocard");
+    head.appendChild(el("h3", null, "All time"));
+    var r1 = el("div", "omoneyrow big"); r1.appendChild(el("span", null, cnt + " orders")); r1.appendChild(el("b", null, money(grand2)));
+    head.appendChild(r1);
+    root.appendChild(head);
+
+    // ---- year-by-year chart ----
+    var yc = el("div", "ocard");
+    yc.appendChild(el("h3", null, "Year by year — tap a year"));
+    yc.appendChild(barChart(years.map(function (y) {
+      return { label: y, value: byYear[y].total, selected: y === state.completedYear,
+        onClick: function () { state.completedYear = y; state.completedMonth = null; router(); } };
+    }), { height: 168, slot: 70, maxBar: 60 }));
+    root.appendChild(yc);
+
+    // ---- month-by-month for the selected year ----
+    var MN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var byMonth = completedByMonth(state.completedYear);
+    var yrTotal = byMonth.reduce(function (a, m) { return a + m.total; }, 0);
+    var mc = el("div", "ocard");
+    mc.appendChild(el("h3", null, state.completedYear + " — " + money(yrTotal) + " · tap a month"));
+    mc.appendChild(barChart(byMonth.map(function (m, i) {
+      return { label: MN[i], value: m.total, selected: state.completedMonth === (i + 1),
+        onClick: function () { state.completedMonth = (state.completedMonth === (i + 1)) ? null : (i + 1); router(); } };
+    }), { height: 170, slot: 30, maxBar: 24 }));
+    root.appendChild(mc);
+
+    // ---- drill-in list ----
+    if (state.completedMonth) {
+      var mo = state.completedMonth;
+      var list = completedOrders().filter(function (o) {
+        return o.eventDate.slice(0, 4) === state.completedYear && parseInt(o.eventDate.slice(5, 7), 10) === mo;
+      }).sort(function (a, b) { return a.eventDate < b.eventDate ? -1 : 1; });
+      var mtot = list.reduce(function (a, o) { return a + (grand(o) || 0); }, 0);
+      var strip = el("div", "ostrip good");
+      strip.appendChild(el("span", null, MN[mo - 1] + " " + state.completedYear + " — " + list.length + " order" + (list.length === 1 ? "" : "s") + ", " + money(mtot)));
+      root.appendChild(strip);
+      list.forEach(function (o) { root.appendChild(orderRow(o)); });
+    } else {
+      root.appendChild(el("div", "ofoot", "Tap a month above to see those orders."));
+    }
   }
 
   function buildTicker() {
