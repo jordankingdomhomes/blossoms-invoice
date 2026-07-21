@@ -532,7 +532,7 @@
     bList.onclick = function () { go("#/orders"); };
     root.appendChild(bList);
 
-    var bMoney = el("button", "obtn obtn-plain", "📊  Revenue &amp; completed orders");
+    var bMoney = el("button", "obtn obtn-plain", "📊  Revenue & completed orders");
     bMoney.onclick = function () { go("#/completed"); };
     root.appendChild(bMoney);
 
@@ -595,11 +595,14 @@
 
     var split = el("div", "ohero-split");
 
-    // long money strings must shrink rather than clip
+    // whole dollars in the hero (cents don't matter in a summary and cause overflow),
+    // and shrink the font for longer numbers so it never clips the tile
     function num(cents) {
-      var txt = money(cents), n = el("div", "ohero-num", txt);
+      var whole = Math.round((cents || 0) / 100);
+      var txt = "$" + whole.toLocaleString("en-US");
+      var n = el("div", "ohero-num", txt);
       var L = txt.length;
-      n.style.fontSize = L > 10 ? "23px" : L > 8 ? "27px" : L > 6 ? "31px" : "34px";
+      n.style.fontSize = L > 8 ? "26px" : L > 7 ? "30px" : L > 6 ? "34px" : "38px";
       return n;
     }
 
