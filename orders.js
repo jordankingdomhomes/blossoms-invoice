@@ -1560,6 +1560,28 @@
       pc.appendChild(ps); d.appendChild(pc);
     }
 
+    if (o.videoUrls && o.videoUrls.length) {
+      var vc = el("div", "ocard");
+      vc.appendChild(el("h3", null, "Videos"));
+      var vs = el("div", "ovideos");
+      o.videoUrls.forEach(function (u) {
+        var v = el("video"); v.controls = true; v.playsInline = true; v.preload = "metadata"; v.src = u;
+        vs.appendChild(v);
+      });
+      vc.appendChild(vs); d.appendChild(vc);
+    }
+
+    if (o.docUrls && o.docUrls.length) {
+      var dc = el("div", "ocard");
+      dc.appendChild(el("h3", null, "Documents"));
+      o.docUrls.forEach(function (doc) {
+        var a = el("a", "obtn obtn-plain odoclink", "📄 " + (doc.name || "View document"));
+        a.href = doc.url; a.target = "_blank"; a.rel = "noopener";
+        dc.appendChild(a);
+      });
+      d.appendChild(dc);
+    }
+
     // money
     var mc = el("div", "ocard");
     mc.appendChild(el("h3", null, "Money"));

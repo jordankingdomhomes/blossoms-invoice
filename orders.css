@@ -326,6 +326,9 @@ body{
 .odrop small{font-size:14px; color:var(--o-muted); font-weight:600}
 .odrop.over{background:var(--o-rose-soft)}
 .ophotos{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px}
+.ovideos{display:flex; flex-direction:column; gap:12px; margin-top:12px}
+.ovideos video{width:100%; border-radius:14px; background:#000; max-height:420px}
+.odoclink{justify-content:flex-start; text-align:left; margin-top:10px}
 .ophoto{position:relative; width:88px; height:88px}
 .ophoto img{width:88px; height:88px; object-fit:cover; border-radius:16px; background:var(--o-line); box-shadow:var(--o-sh-1)}
 .ophoto button{
