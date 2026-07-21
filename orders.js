@@ -44,6 +44,7 @@
   function fmtLong(iso) { var d = dateOf(iso); if (!d) return ""; return DOWFULL[d.getDay()] + ", " + MONTHS[d.getMonth()] + " " + d.getDate(); }
   function fmtShort(iso) { var d = dateOf(iso); if (!d) return ""; return MONTHS[d.getMonth()].slice(0, 3) + " " + d.getDate(); }
   function fmtShortYear(iso) { var d = dateOf(iso); if (!d) return ""; return MONTHS[d.getMonth()].slice(0, 3) + " " + d.getDate() + ", " + d.getFullYear(); }
+  function fmtLongYear(iso) { var d = dateOf(iso); if (!d) return ""; return DOWFULL[d.getDay()] + ", " + MONTHS[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear(); }
   function fmtTime(t) {
     if (!t) return "";
     var p = t.split(":"), h = +p[0], m = p[1];
@@ -1425,8 +1426,8 @@
 
     /* 1 — date */
     var dateIn = el("input"); dateIn.type = "date"; dateIn.value = o.eventDate || todayISO();
-    var echo = el("div", "oecho", fmtLong(dateIn.value));
-    dateIn.oninput = function () { o.eventDate = dateIn.value; echo.textContent = fmtLong(o.eventDate); saveDraft(); };
+    var echo = el("div", "oecho", fmtLongYear(dateIn.value));
+    dateIn.oninput = function () { o.eventDate = dateIn.value; echo.textContent = fmtLongYear(o.eventDate); saveDraft(); };
     var f1 = field("What day is it for?", dateIn);
     f1.appendChild(echo);
 
@@ -1791,7 +1792,7 @@
     var d = el("div", "odetail");
 
     d.appendChild(el("h2", null, (o.name || "No name yet")));
-    var sub = fmtLong(o.eventDate) + (o.eventTime ? " · " + fmtTime(o.eventTime) : "");
+    var sub = fmtLongYear(o.eventDate) + (o.eventTime ? " · " + fmtTime(o.eventTime) : "");
     if (o.tentative) sub += "  (not confirmed)";
     d.appendChild(el("div", "osubtitle", sub));
 
@@ -2876,7 +2877,7 @@
   // ---- keep the home-screen app current (iOS standalone PWAs cache index.html hard, so
   //      new code never loads on its own). Poll a tiny no-store version.json; when a newer
   //      build is live, reload to a build-stamped URL that dodges the cache. ----
-  var BUILD = 25;  // keep in sync with version.json "build" AND the ?v= in index.html
+  var BUILD = 26;  // keep in sync with version.json "build" AND the ?v= in index.html
   var lastVerCheck = 0;
   function checkForUpdate() {
     var now = Date.now();
