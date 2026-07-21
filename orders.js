@@ -2391,9 +2391,15 @@
     return changed;
   }
 
+  var didFullPull = false;
   function cloudPull() {
     if (!cloudOn()) return Promise.resolve(0);
-    var u = CLOUD.url + "/api/orders" + (CLOUD.lastPullAt ? "?since=" + encodeURIComponent(CLOUD.lastPullAt) : "");
+    // The FIRST pull after the app loads ignores `since` and grabs everything.
+    // This self-heals the case where records were added to the cloud with an
+    // older timestamp than this device's last pull (an incremental pull skips those).
+    var full = !didFullPull;
+    didFullPull = true;
+    var u = CLOUD.url + "/api/orders" + ((!full && CLOUD.lastPullAt) ? "?since=" + encodeURIComponent(CLOUD.lastPullAt) : "");
     return fetch(u, { headers: cloudHeaders() })
       .then(function (r) { if (!r.ok) throw new Error("pull " + r.status); return r.json(); })
       .then(function (d) {
