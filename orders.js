@@ -2316,6 +2316,9 @@
      The token is NOT in this repo. It arrives once via a setup link
      (?cloud=<token>), is saved to localStorage, and stripped from the URL. */
   var K_CLOUD = "blossoms.cloud.v1";
+  // Cloud backup is ALWAYS on — every device (phone home-screen, Safari, Mac)
+  // connects with no setup. Jordan chose this over privacy for the business.
+  var DEFAULT_CLOUD_CODE = "blossoms2026";
   var CLOUD = {
     url: "https://blossoms-sync-892609853582.us-east1.run.app",
     token: null,
@@ -2330,16 +2333,17 @@
       var c = JSON.parse(localStorage.getItem(K_CLOUD) || "null");
       if (c && c.token) { CLOUD.token = c.token; CLOUD.lastPullAt = c.lastPullAt || null; }
     } catch (e) { }
-    // one-time setup link: ?cloud=<token>
+    // a setup link can still override with a full token: ?cloud=<token>
     try {
-      var m = /[?&]cloud=([A-Za-z0-9_\-]{20,})/.exec(location.search || "");
+      var m = /[?&]cloud=([A-Za-z0-9_\-]{8,})/.exec(location.search || "");
       if (m) {
         CLOUD.token = m[1];
-        saveCloud();
-        // strip the token out of the address bar so it isn't shared by accident
         history.replaceState(null, "", location.pathname + location.hash);
       }
     } catch (e) { }
+    // No token on this device yet? Use the built-in one so it connects on its own.
+    if (!CLOUD.token) CLOUD.token = DEFAULT_CLOUD_CODE;
+    saveCloud();
     CLOUD.state = CLOUD.token ? "syncing" : "off";
   }
   function saveCloud() {
