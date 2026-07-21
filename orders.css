@@ -187,6 +187,29 @@ body{
 .obar-lab{fill:var(--o-muted); font-size:12px; font-weight:700; text-anchor:middle; font-family:inherit}
 .obar-lab.sel{fill:var(--o-rose-deep); font-weight:800}
 
+/* ===== year-over-year revenue view ===== */
+.oh2sub{margin:-4px 0 14px; font-size:17px; font-weight:700; color:var(--o-ink-2)}
+.oyoy-selbg{fill:var(--o-gold-soft)}
+.oyoy-legend{display:flex; flex-wrap:wrap; gap:8px 16px; margin:4px 2px 10px}
+.oyoy-legitem{display:inline-flex; align-items:center; gap:7px; font-size:15px; font-weight:800; color:var(--o-ink-2)}
+.oyoy-dot{width:14px; height:14px; border-radius:5px; display:inline-block}
+.oyoy-hint{text-align:center; font-size:14px; font-weight:700; color:var(--o-muted); margin:2px 0 12px}
+.oyoy-chartcard{padding:14px 12px 8px}
+.oyoy-table{margin:2px 0 6px; border:1px solid var(--o-line); border-radius:18px; overflow:hidden; background:var(--o-card); box-shadow:var(--o-sh-1)}
+.oyoy-row{display:grid; grid-template-columns:2.9rem repeat(var(--yoy-cols,4), 1fr); align-items:center; min-height:56px; border-top:1px solid var(--o-line); cursor:pointer; transition:background .12s, transform .06s}
+.oyoy-row:first-child{border-top:none}
+.oyoy-row.sel{background:var(--o-gold-soft)}
+.oyoy-row:not(.oyoy-head):active{background:var(--o-gold-soft); transform:scale(.995)}
+.oyoy-head{background:var(--o-bg-2); cursor:default; min-height:0}
+.oyoy-mon{font-weight:800; font-size:15px; color:var(--o-ink-2); padding:11px 4px 11px 12px}
+.oyoy-cell{text-align:right; padding:9px 12px 9px 4px}
+.oyoy-head .oyoy-cell{font-weight:800; color:var(--o-ink); font-size:14px; padding-top:11px; padding-bottom:11px}
+.oyoy-amt{font-size:15px; font-weight:700; color:var(--o-ink-2)}
+.oyoy-cell.cur .oyoy-amt{font-size:16px; font-weight:800; color:var(--o-green)}
+.oyoy-pct{font-size:12px; font-weight:800; margin-top:1px; letter-spacing:-.2px}
+.oyoy-pct.up{color:var(--o-good)}
+.oyoy-pct.down{color:var(--o-red)}
+
 .omonthcard{
   display:block; width:100%; text-align:left; background:var(--o-card); border:1px solid var(--o-line);
   border-radius:var(--o-r-card); padding:16px 18px; margin:10px 0; box-shadow:var(--o-sh-1);
