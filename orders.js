@@ -43,6 +43,7 @@
   function monthLabel(mk) { var p = mk.split("-"); return MONTHS[+p[1] - 1] + " " + p[0]; }
   function fmtLong(iso) { var d = dateOf(iso); if (!d) return ""; return DOWFULL[d.getDay()] + ", " + MONTHS[d.getMonth()] + " " + d.getDate(); }
   function fmtShort(iso) { var d = dateOf(iso); if (!d) return ""; return MONTHS[d.getMonth()].slice(0, 3) + " " + d.getDate(); }
+  function fmtShortYear(iso) { var d = dateOf(iso); if (!d) return ""; return MONTHS[d.getMonth()].slice(0, 3) + " " + d.getDate() + ", " + d.getFullYear(); }
   function fmtTime(t) {
     if (!t) return "";
     var p = t.split(":"), h = +p[0], m = p[1];
@@ -514,6 +515,41 @@
 
     root.appendChild(buildHero());
 
+    // ---- find any customer, past or upcoming, right from the front page ----
+    var allOrders = live().filter(function (o) { return o.kind === "order"; });
+    if (allOrders.length) {
+      var hs = el("div", "ohomesearch");
+      var hi = el("input"); hi.type = "search";
+      hi.placeholder = "🔍  Find a customer by name";
+      hi.setAttribute("autocapitalize", "off"); hi.setAttribute("autocorrect", "off");
+      hi.setAttribute("spellcheck", "false"); hi.setAttribute("enterkeyhint", "search");
+      hi.value = state.homeSearch || "";
+      hs.appendChild(hi);
+      var hres = el("div", "ohomesearch-results");
+      hs.appendChild(hres);
+      root.appendChild(hs);
+
+      var HALL = allOrders.slice().sort(function (a, b) { return a.eventDate < b.eventDate ? 1 : -1; }); // newest first
+      function fillHome() {
+        hres.innerHTML = "";
+        var q = (state.homeSearch || "").trim().toLowerCase();
+        if (!q) return; // only show results once she starts typing
+        var hits = HALL.filter(function (o) { return ((o.name || "") + " " + (o.what || "")).toLowerCase().indexOf(q) >= 0; });
+        var strip = el("div", "ostrip good");
+        strip.appendChild(el("span", null, hits.length + " match" + (hits.length === 1 ? "" : "es") + ' for "' + q + '"'));
+        hres.appendChild(strip);
+        if (!hits.length) { hres.appendChild(el("div", "oempty", "No one by that name yet.")); return; }
+        hits.slice(0, 40).forEach(function (o) { hres.appendChild(orderRow(o, { showDate: true })); });
+        if (hits.length > 40) hres.appendChild(el("div", "ohint2", "Showing the first 40 — type more letters to narrow it down."));
+      }
+      var hdeb;
+      hi.addEventListener("input", function () {
+        state.homeSearch = hi.value;
+        clearTimeout(hdeb); hdeb = setTimeout(fillHome, 140);
+      });
+      fillHome();
+    }
+
     var bNew = el("button", "obtn obtn-primary obtn-xl", "➕  New Order");
     bNew.onclick = function () { go("#/new"); };
     root.appendChild(bNew);
@@ -532,7 +568,7 @@
     bList.onclick = function () { go("#/orders"); };
     root.appendChild(bList);
 
-    var bMoney = el("button", "obtn obtn-plain", "📊  Revenue & completed orders");
+    var bMoney = el("button", "obtn obtn-plain", "📊  Revenue");
     bMoney.onclick = function () { go("#/completed"); };
     root.appendChild(bMoney);
 
@@ -785,15 +821,8 @@
     }), { height: 170, slot: 30, maxBar: 24 }));
     root.appendChild(mc);
 
-    // ---- search + browsable list of every finished order ----
-    var sf = el("div", "ofield");
-    var si = el("input"); si.type = "search"; si.placeholder = "🔍 Find a customer by name";
-    si.value = state.completedSearch || "";
-    si.setAttribute("autocapitalize", "off"); si.setAttribute("autocorrect", "off"); si.setAttribute("spellcheck", "false");
-    si.setAttribute("enterkeyhint", "search");
-    sf.appendChild(si);
-    root.appendChild(sf);
-
+    // ---- browsable list of every finished order (customer search lives on the home page) ----
+    state.completedSearch = "";
     var listWrap = el("div");
     root.appendChild(listWrap);
 
@@ -818,7 +847,7 @@
       } else {
         list = ALL.slice(0, CAP);
         capped = ALL.length > CAP;
-        header = "Your " + list.length + " most recent — type a name to find any of the " + ALL.length;
+        header = "Your " + list.length + " most recent finished orders";
       }
 
       var strip = el("div", "ostrip good");
@@ -847,11 +876,6 @@
       }
     }
 
-    var deb;
-    si.addEventListener("input", function () {
-      state.completedSearch = si.value;
-      clearTimeout(deb); deb = setTimeout(fillList, 160);
-    });
     fillList();
   }
 
@@ -986,7 +1010,8 @@
     }
   }
 
-  function orderRow(o) {
+  function orderRow(o, opts) {
+    opts = opts || {};
     var row = el("div", "orow" + (o.done ? " done" : "") + (o.kind === "reminder" ? " reminder" : "") + (state.justSavedId === o.id ? " justsaved" : ""));
     var d = dateOf(o.eventDate);
 
@@ -1010,6 +1035,9 @@
     if (SRC_GLYPH[o.source]) nm.appendChild(document.createTextNode(" " + SRC_GLYPH[o.source]));
     if (o.invoicedAt) nm.appendChild(document.createTextNode(" 📄"));
     body.appendChild(nm);
+
+    // when there's no month header above (search results), spell out the full date incl. year
+    if (opts.showDate && o.eventDate) body.appendChild(el("div", "orow-date", fmtShortYear(o.eventDate)));
 
     var what = (o.what || "").replace(/\s+/g, " ").trim();
     var w = el("div", "owhat" + (what ? "" : " empty"), what ? (what.length > 64 ? what.slice(0, 64) + "…" : what) : "⚠︎ Nothing written down yet");

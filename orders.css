@@ -319,6 +319,21 @@ body{
 .ofield textarea{min-height:100px; resize:vertical; line-height:1.45}
 .ofield input:focus, .ofield textarea:focus{outline:none; border-color:var(--o-rose); box-shadow:0 0 0 4px var(--o-rose-soft)}
 .ofield .ohint{font-size:14px; color:var(--o-muted); margin-top:7px; font-weight:600}
+
+/* home-page customer search */
+.ohomesearch{margin:16px 0 4px}
+.ohomesearch > input{
+  width:100%; box-sizing:border-box; font:inherit; font-size:18px; font-weight:600;
+  color:var(--o-ink); background:var(--o-card); -webkit-appearance:none; appearance:none;
+  border:1.5px solid var(--o-line-2); border-radius:var(--o-r-btn); padding:16px 18px; min-height:58px;
+  box-shadow:var(--o-sh-1);
+}
+.ohomesearch > input::placeholder{color:var(--o-muted); font-weight:600}
+.ohomesearch > input:focus{outline:none; border-color:var(--o-rose); box-shadow:0 0 0 4px var(--o-rose-soft)}
+.ohomesearch-results{margin-top:10px}
+.ohomesearch-results:empty{display:none}
+.orow-date{font-size:14px; font-weight:800; color:var(--o-gold); letter-spacing:-.2px; margin:1px 0}
+.ohint2{font-size:14px; color:var(--o-muted); font-weight:600; text-align:center; padding:12px 6px}
 .oecho{margin-top:10px; font-size:17px; font-weight:800; color:var(--o-green)}
 .ochips{display:flex; gap:8px; flex-wrap:wrap}
 .ochoice{
