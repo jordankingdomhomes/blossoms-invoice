@@ -187,8 +187,15 @@ body{
 .obar-lab{fill:var(--o-muted); font-size:12px; font-weight:700; text-anchor:middle; font-family:inherit}
 .obar-lab.sel{fill:var(--o-rose-deep); font-weight:800}
 
-/* ===== year-over-year revenue view ===== */
+/* ===== revenue views ===== */
 .oh2sub{margin:-4px 0 14px; font-size:17px; font-weight:700; color:var(--o-ink-2)}
+.oseg{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:2px 0 14px}
+.oseg-btn{min-height:56px; padding:12px 8px; border-radius:15px; border:1.5px solid var(--o-line-2); background:var(--o-card); color:var(--o-ink-2); font-size:15px; font-weight:800; letter-spacing:-.3px; white-space:nowrap; cursor:pointer; box-shadow:var(--o-sh-1); transition:transform .06s}
+.oseg-btn:active{transform:scale(.98)}
+.oseg-btn.active{background:var(--o-green); border-color:var(--o-green); color:#fff; box-shadow:0 6px 16px rgba(92,122,84,.28)}
+.ochart-title{font-size:16px; font-weight:800; color:var(--o-ink); margin:0 0 8px; letter-spacing:-.3px}
+.oline{fill:none; stroke:var(--o-green); stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round}
+.oline-area{fill:var(--o-green-soft)}
 .oyoy-selbg{fill:var(--o-gold-soft)}
 .oyoy-legend{display:flex; flex-wrap:wrap; gap:8px 16px; margin:4px 2px 10px}
 .oyoy-legitem{display:inline-flex; align-items:center; gap:7px; font-size:15px; font-weight:800; color:var(--o-ink-2)}

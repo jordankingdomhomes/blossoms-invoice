@@ -761,7 +761,7 @@
 
   var SVGNS = "http://www.w3.org/2000/svg";
   function svgEl(tag, attrs) { var e = document.createElementNS(SVGNS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
-  // single-series bar chart; items: [{label,value,selected,onClick}]
+  // single-series bar chart; items: [{label,value,selected,onClick,color}]
   function barChart(items, opts) {
     opts = opts || {};
     var n = items.length, H = opts.height || 172;
@@ -777,15 +777,45 @@
       var x = padX + slot * i + slot / 2;
       var h = it.value > 0 ? Math.max(3, innerH * (it.value / max)) : 0;
       var y = padT + innerH - h;
-      if (it.onClick) {
-        var hit = svgEl("rect", { x: padX + slot * i, y: padT, width: slot, height: innerH + 6, fill: "transparent" });
-        hit.style.cursor = "pointer"; hit.addEventListener("click", it.onClick); svg.appendChild(hit);
+      if (h > 0) {
+        var bar = svgEl("rect", { x: x - bw / 2, y: y, width: bw, height: h, rx: 5, class: "obar" + (it.selected ? " sel" : "") });
+        if (it.color && !it.selected) bar.style.fill = it.color;   // inline style beats the .obar CSS fill (per-bar color)
+        svg.appendChild(bar);
       }
-      if (h > 0) svg.appendChild(svgEl("rect", { x: x - bw / 2, y: y, width: bw, height: h, rx: 5, class: "obar" + (it.selected ? " sel" : "") }));
-      if (it.value > 0) {
+      if (it.value > 0 && !opts.hideValues) {
         var v = svgEl("text", { x: x, y: y - 6, class: "obar-val" }); v.textContent = moneyShort(it.value); svg.appendChild(v);
       }
       var lab = svgEl("text", { x: x, y: H - 10, class: "obar-lab" + (it.selected ? " sel" : "") }); lab.textContent = it.label; svg.appendChild(lab);
+      // tap target LAST + pointer-events:all so a tap on the bar/label actually drills (else the opaque bar swallows it)
+      if (it.onClick) {
+        var hit = svgEl("rect", { x: padX + slot * i, y: padT - 4, width: slot, height: innerH + padB, fill: "transparent" });
+        hit.setAttribute("pointer-events", "all"); hit.style.cursor = "pointer"; hit.addEventListener("click", it.onClick);
+        svg.appendChild(hit);
+      }
+    });
+    return svg;
+  }
+
+  // area+line chart for a long monthly series; points: [{value, tick}] tick=x-axis label or null
+  function lineChart(points, opts) {
+    opts = opts || {};
+    var n = points.length, H = opts.height || 190, padT = 16, padB = 26, padX = 10, W = 360;
+    var innerH = H - padT - padB, innerW = W - padX * 2;
+    var max = Math.max.apply(null, points.map(function (p) { return p.value || 0; }).concat([1]));
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, class: "obars", preserveAspectRatio: "xMidYMid meet" });
+    svg.appendChild(svgEl("line", { x1: padX, y1: padT + innerH + .5, x2: W - padX, y2: padT + innerH + .5, class: "obaseline" }));
+    function X(i) { return n <= 1 ? padX + innerW / 2 : padX + innerW * (i / (n - 1)); }
+    function Y(v) { return padT + innerH - innerH * ((v || 0) / max); }
+    var base = (padT + innerH).toFixed(1), line = "";
+    points.forEach(function (p, i) { line += (i === 0 ? "M" : "L") + X(i).toFixed(1) + " " + Y(p.value).toFixed(1) + " "; });
+    if (n > 0) {
+      var area = "M" + X(0).toFixed(1) + " " + base + " L" + line.slice(1) + "L" + X(n - 1).toFixed(1) + " " + base + " Z";
+      svg.appendChild(svgEl("path", { d: area, class: "oline-area" }));
+      svg.appendChild(svgEl("path", { d: line, class: "oline" }));
+    }
+    points.forEach(function (p, i) {
+      if (!p.tick) return;
+      var t = svgEl("text", { x: X(i), y: H - 8, class: "obar-lab" }); t.textContent = p.tick; svg.appendChild(t);
     });
     return svg;
   }
@@ -850,62 +880,108 @@
 
     // newest year = green (ties to the "Revenue" button + legend); then rose, gold, plum…
     var YEAR_PALETTE = ["#5c7a54", "#d76c7d", "#b8862f", "#9a7aa8", "#5f8aa8", "#c0894a"];
-    var series = yearsDesc.map(function (y, i) {
-      return { year: y, color: YEAR_PALETTE[i % YEAR_PALETTE.length], totals: mat[y] ? mat[y].t : [0,0,0,0,0,0,0,0,0,0,0,0] };
-    });
+    function yearColor(y) { var i = yearsDesc.indexOf(y); return YEAR_PALETTE[(i < 0 ? 0 : i) % YEAR_PALETTE.length]; }
+    var series = yearsDesc.map(function (y) { return { year: y, color: yearColor(y), totals: mat[y] ? mat[y].t : [0,0,0,0,0,0,0,0,0,0,0,0] }; });
 
-    // ---- legend ----
-    var leg = el("div", "oyoy-legend");
-    series.forEach(function (s) {
-      var it = el("span", "oyoy-legitem");
-      var dot = el("span", "oyoy-dot"); dot.style.background = s.color; it.appendChild(dot);
-      it.appendChild(document.createTextNode(s.year));
-      leg.appendChild(it);
-    });
-    root.appendChild(leg);
-    root.appendChild(el("div", "oyoy-hint", "👆 Tap any month to see those orders below"));
-
-    function drillMonth(m1) {   // m1 = 1-12
-      state.completedShowAll = false;
+    function drillMonth(m1) {   // m1 = 1-12 — that month across every year
+      state.completedShowAll = false; state.completedYearOnly = null;
       state.completedMonth = (state.completedMonth === m1) ? null : m1;
-      state.scrollCompletedList = state.completedMonth != null;   // jump to the results, but not when clearing
+      state.scrollCompletedList = state.completedMonth != null;
       router();
     }
-
-    // ---- grouped year-over-year bar chart ----
-    var gc = el("div", "ocard oyoy-chartcard");
-    gc.appendChild(yoyChart(series, {
-      selectedMonth: state.completedMonth,
-      onMonth: function (mi) { drillMonth(mi + 1); }
-    }));
-    root.appendChild(gc);
-
-    // ---- the numbers: every month, every year, this year vs last ----
-    var tbl = el("div", "oyoy-table"); tbl.style.setProperty("--yoy-cols", yearsDesc.length);
-    var hr = el("div", "oyoy-row oyoy-head");
-    hr.appendChild(el("div", "oyoy-mon", ""));
-    yearsDesc.forEach(function (y) { hr.appendChild(el("div", "oyoy-cell", y)); });
-    tbl.appendChild(hr);
-    MN.forEach(function (mn, mi) {
-      var row = el("div", "oyoy-row" + (state.completedMonth === mi + 1 ? " sel" : ""));
-      row.appendChild(el("div", "oyoy-mon", mn));
-      yearsDesc.forEach(function (y, yi) {
-        var v = mat[y] ? mat[y].t[mi] : 0;
-        var cell = el("div", "oyoy-cell" + (y === curYear ? " cur" : ""));
-        cell.appendChild(el("div", "oyoy-amt", v > 0 ? moneyShort(v) : "—"));
-        if (y === curYear && v > 0) {
-          var prev = yearsDesc[yi + 1], pv = (prev && mat[prev]) ? mat[prev].t[mi] : 0;
-          if (pv > 0) {
-            var pct = Math.round((v - pv) / pv * 100);
-            cell.appendChild(el("div", "oyoy-pct " + (pct >= 0 ? "up" : "down"), (pct >= 0 ? "+" : "") + pct + "%"));
-          }
-        }
-        row.appendChild(cell);
+    function drillYear(y) {     // one whole year
+      state.completedShowAll = false; state.completedMonth = null;
+      state.completedYearOnly = (state.completedYearOnly === y) ? null : y;
+      state.scrollCompletedList = state.completedYearOnly != null;
+      router();
+    }
+    function legendEl() {
+      var leg = el("div", "oyoy-legend");
+      series.forEach(function (s) {
+        var it = el("span", "oyoy-legitem");
+        var dot = el("span", "oyoy-dot"); dot.style.background = s.color; it.appendChild(dot);
+        it.appendChild(document.createTextNode(s.year));
+        leg.appendChild(it);
       });
-      row.onclick = function () { drillMonth(mi + 1); };
-      tbl.appendChild(row);
+      return leg;
+    }
+
+    // ---- view switcher: several graphs, YoY is just one of them ----
+    var VIEW = state.revenueView || "thisyear";
+    var seg = el("div", "oseg");
+    [["thisyear", "📊 This Year"], ["years", "📅 Years"], ["trend", "📈 Trend"], ["yoy", "🆚 Year vs Year"]].forEach(function (v) {
+      var b = el("button", "oseg-btn" + (VIEW === v[0] ? " active" : ""), v[1]);
+      b.onclick = function () { if (VIEW === v[0]) return; state.revenueView = v[0]; state.completedMonth = null; state.completedYearOnly = null; router(); };
+      seg.appendChild(b);
     });
-    root.appendChild(tbl);
+    root.appendChild(seg);
+
+    if (VIEW === "thisyear") {
+      var tyTot = series[0].totals.reduce(function (a, v) { return a + v; }, 0);
+      var card = el("div", "ocard oyoy-chartcard");
+      card.appendChild(el("div", "ochart-title", curYear + " so far — " + money(tyTot)));
+      card.appendChild(el("div", "oyoy-hint", "👆 Tap a month to see those orders below"));
+      var tyNonZero = series[0].totals.filter(function (v) { return v > 0; }).length;
+      card.appendChild(barChart(MN.map(function (mn, mi) {
+        return { label: mn, value: series[0].totals[mi], selected: state.completedMonth === mi + 1, color: "#5c7a54", onClick: function () { drillMonth(mi + 1); } };
+      }), { height: 196, slot: 28, maxBar: 19, hideValues: tyNonZero > 8 }));
+      root.appendChild(card);
+
+    } else if (VIEW === "years") {
+      root.appendChild(legendEl());
+      var card2 = el("div", "ocard oyoy-chartcard");
+      card2.appendChild(el("div", "ochart-title", "Each year — all time " + money(grand2)));
+      card2.appendChild(el("div", "oyoy-hint", "👆 Tap a year to see its orders below"));
+      card2.appendChild(barChart(years.map(function (y) {
+        return { label: y, value: byYear[y].total, selected: state.completedYearOnly === y, color: yearColor(y), onClick: function () { drillYear(y); } };
+      }), { height: 196, slot: 66, maxBar: 52 }));
+      root.appendChild(card2);
+
+    } else if (VIEW === "trend") {
+      var card3 = el("div", "ocard oyoy-chartcard");
+      card3.appendChild(el("div", "ochart-title", "Every month since " + years[0]));
+      var pts = [], todayY = todayISO().slice(0, 4), todayM = parseInt(todayISO().slice(5, 7), 10);
+      for (var Y2 = parseInt(years[0], 10); Y2 <= parseInt(curYear, 10); Y2++) {
+        var row = mat[String(Y2)] ? mat[String(Y2)].t : [0,0,0,0,0,0,0,0,0,0,0,0];
+        var upto = (String(Y2) === todayY) ? todayM : 12;
+        for (var m = 0; m < upto; m++) pts.push({ value: row[m] || 0, tick: m === 0 ? String(Y2) : null });
+      }
+      card3.appendChild(lineChart(pts, { height: 196 }));
+      root.appendChild(card3);
+
+    } else { // yoy — the grouped comparison chart + table
+      root.appendChild(legendEl());
+      root.appendChild(el("div", "oyoy-hint", "👆 Tap any month to see those orders below"));
+      var gc = el("div", "ocard oyoy-chartcard");
+      gc.appendChild(yoyChart(series, { selectedMonth: state.completedMonth, onMonth: function (mi) { drillMonth(mi + 1); } }));
+      root.appendChild(gc);
+
+      var tbl = el("div", "oyoy-table"); tbl.style.setProperty("--yoy-cols", yearsDesc.length);
+      var hr = el("div", "oyoy-row oyoy-head");
+      hr.appendChild(el("div", "oyoy-mon", ""));
+      yearsDesc.forEach(function (y) { hr.appendChild(el("div", "oyoy-cell", y)); });
+      tbl.appendChild(hr);
+      MN.forEach(function (mn, mi) {
+        var row = el("div", "oyoy-row" + (state.completedMonth === mi + 1 ? " sel" : ""));
+        row.appendChild(el("div", "oyoy-mon", mn));
+        yearsDesc.forEach(function (y, yi) {
+          var v = mat[y] ? mat[y].t[mi] : 0;
+          var cell = el("div", "oyoy-cell" + (y === curYear ? " cur" : ""));
+          cell.appendChild(el("div", "oyoy-amt", v > 0 ? moneyShort(v) : "—"));
+          if (y === curYear && v > 0) {
+            var prev = yearsDesc[yi + 1], pv = (prev && mat[prev]) ? mat[prev].t[mi] : 0;
+            if (pv > 0) {
+              var pct = Math.round((v - pv) / pv * 100);
+              cell.appendChild(el("div", "oyoy-pct " + (pct >= 0 ? "up" : "down"), (pct >= 0 ? "+" : "") + pct + "%"));
+            }
+          }
+          row.appendChild(cell);
+        });
+        row.onclick = function () { drillMonth(mi + 1); };
+        tbl.appendChild(row);
+      });
+      root.appendChild(tbl);
+    }
 
     // ---- browsable list of every finished order (customer search lives on the home page) ----
     state.completedSearch = "";
@@ -923,6 +999,10 @@
       if (q) {
         list = ALL.filter(function (o) { return ((o.name || "") + " " + (o.what || "")).toLowerCase().indexOf(q) >= 0; });
         header = list.length + " match" + (list.length === 1 ? "" : "es") + ' for "' + q + '"';
+      } else if (state.completedYearOnly) {
+        list = ALL.filter(function (o) { return o.eventDate.slice(0, 4) === state.completedYearOnly; });
+        var ytot = list.reduce(function (a, o) { return a + (grand(o) || 0); }, 0);
+        header = "All of " + state.completedYearOnly + " — " + list.length + " order" + (list.length === 1 ? "" : "s") + " · " + money(ytot);
       } else if (state.completedMonth) {
         list = ALL.filter(function (o) { return parseInt(o.eventDate.slice(5, 7), 10) === state.completedMonth; });
         var mtot = list.reduce(function (a, o) { return a + (grand(o) || 0); }, 0);
@@ -938,9 +1018,9 @@
 
       var strip = el("div", "ostrip good");
       strip.appendChild(el("span", null, header));
-      if (state.completedMonth && !q) {
+      if ((state.completedMonth || state.completedYearOnly) && !q) {
         var clr = el("button", null, "Show all");
-        clr.onclick = function () { state.completedMonth = null; router(); };
+        clr.onclick = function () { state.completedMonth = null; state.completedYearOnly = null; router(); };
         strip.appendChild(clr);
       }
       listWrap.appendChild(strip);
@@ -2792,6 +2872,30 @@
     } catch (e) { console.warn("photo backfill failed", e); }
   }
   if (navigator.storage && navigator.storage.persist) { try { navigator.storage.persist(); } catch (e) { } }
+
+  // ---- keep the home-screen app current (iOS standalone PWAs cache index.html hard, so
+  //      new code never loads on its own). Poll a tiny no-store version.json; when a newer
+  //      build is live, reload to a build-stamped URL that dodges the cache. ----
+  var BUILD = 25;  // keep in sync with version.json "build" AND the ?v= in index.html
+  var lastVerCheck = 0;
+  function checkForUpdate() {
+    var now = Date.now();
+    if (now - lastVerCheck < 90000) return;                          // at most every 90s
+    lastVerCheck = now;
+    fetch("version.json?cb=" + now, { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.build || j.build <= BUILD) return;
+        if (location.search.indexOf("b=" + j.build) >= 0) return;    // already on this build — never loop
+        if (/^#\/(new|edit|invoice)/.test(location.hash || "")) return; // don't yank her out of typing
+        location.replace(location.pathname + "?b=" + j.build + (location.hash || "#/"));
+      })
+      .catch(function () { });
+  }
+  checkForUpdate();
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) checkForUpdate(); });
+  window.addEventListener("focus", checkForUpdate);
+
   window.addEventListener("hashchange", function () { router(); });
   router();
   bootRecover().then(function () { if (!location.hash || location.hash === "#/") router(); });
