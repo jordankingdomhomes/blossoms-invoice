@@ -440,7 +440,8 @@
   document.body.insertBefore(root, document.body.firstChild);
   var invoiceScreen = $("screen-invoice");
 
-  var state = { tab: "list", tickerMonth: monthKey(todayISO()), calMonth: monthKey(todayISO()), justSaved: null, justSavedId: null, filter: null, monthFilter: null, lightbox: null };
+  var state = { tab: "list", tickerMonth: monthKey(todayISO()), calMonth: monthKey(todayISO()), justSaved: null, justSavedId: null, filter: null, monthFilter: null, lightbox: null,
+    expandedMonths: {}, ordersScrollY: null, ordersRestoreScroll: false };
 
   function go(hash) { location.hash = hash; }
   function showInvoice(on) {
@@ -463,6 +464,12 @@
     if (qi >= 0) { q = h.slice(qi + 1); h = h.slice(0, qi); }
     var parts = h.split("/").filter(Boolean);
 
+    // the orders-list scroll restore only survives a "list -> detail -> back" round trip —
+    // going anywhere else drops it, so a later fresh visit to the list isn't surprised
+    // by a leftover scroll position from an unrelated earlier visit
+    var keepsScrollArm = parts[0] === "order" || parts[0] === "edit" || (parts[0] === "orders" && parts[1] !== "calendar");
+    if (!keepsScrollArm) state.ordersRestoreScroll = false;
+
     if (parts[0] === "invoice") {
       showInvoice(true);
       var qp = new URLSearchParams(q);
@@ -480,9 +487,11 @@
     if (invoiceScreen && !invoiceScreen.hidden) autosaveInvoice();  // leaving the invoice? keep the draft
     showInvoice(false);
     root.innerHTML = "";
-    window.scrollTo(0, 0);
 
     var atOrders = parts[0] === "orders";
+    var isOrdersListTab = atOrders && parts[1] !== "calendar";
+    // skip the reset-to-top when we're about to restore her exact scroll position instead
+    if (!(isOrdersListTab && state.ordersRestoreScroll)) window.scrollTo(0, 0);
     // the "✓ Saved" note survives the hop back to the list, then clears when she goes elsewhere
     if (!atOrders) { state.justSaved = null; state.justSavedId = null; }
 
@@ -565,6 +574,27 @@
     var bMyInv = el("button", "obtn obtn-plain", "🗂  My Invoices" + (nInv ? "  (" + nInv + ")" : ""));
     bMyInv.onclick = function () { go("#/invoices"); };
     root.appendChild(bMyInv);
+
+    // ---- drafts waiting to be finished — only shows up while one exists ----
+    var drafts = liveInvoices().filter(function (i) { return !i.pdfAt; });
+    if (drafts.length) {
+      var dc = el("div", "ocard odraft-card");
+      dc.appendChild(el("h3", null, "✏️  Draft" + (drafts.length === 1 ? "" : "s") + " waiting"));
+      drafts.slice(0, 4).forEach(function (inv) {
+        var row = el("div", "odraft-row");
+        row.appendChild(el("div", "oname", inv.billTo || "No name yet"));
+        var what = ((inv.items && inv.items[0] && inv.items[0].desc) || "").replace(/\s+/g, " ").trim();
+        row.appendChild(el("div", "owhat" + (what ? "" : " empty"), what || "Tap to finish this invoice"));
+        row.onclick = function () { go("#/invoice?inv=" + inv.id); };
+        dc.appendChild(row);
+      });
+      if (drafts.length > 4) {
+        var more = el("div", "odraft-more", "+" + (drafts.length - 4) + " more draft" + (drafts.length - 4 === 1 ? "" : "s") + " — see My Invoices");
+        more.onclick = function () { go("#/invoices"); };
+        dc.appendChild(more);
+      }
+      root.appendChild(dc);
+    }
 
     var n = live().filter(function (o) { return o.kind === "order"; }).length;
     var bList = el("button", "obtn obtn-plain", "📋  See all my orders" + (n ? "  (" + n + ")" : ""));
@@ -1172,13 +1202,18 @@
 
       var body = el("div");
       if (isPast && !unfinished && !state.filter) {
+        var isOpen = !!state.expandedMonths[mk];   // remembered across renders, so a "back" doesn't re-collapse the month she just opened
         head.className += " collapsed";
-        body.hidden = true;
+        body.hidden = !isOpen;
         head.style.cursor = "pointer";
         var collapsedTxt = nOrders + " · all done — tap to show";
         var openTxt = nOrders + " order" + (nOrders === 1 ? "" : "s") + (st.worth ? " · " + money(st.worth) : "");
-        sum.textContent = collapsedTxt;
-        head.onclick = function () { body.hidden = !body.hidden; sum.textContent = body.hidden ? collapsedTxt : openTxt; };
+        sum.textContent = isOpen ? openTxt : collapsedTxt;
+        head.onclick = function () {
+          body.hidden = !body.hidden;
+          state.expandedMonths[mk] = !body.hidden;
+          sum.textContent = body.hidden ? collapsedTxt : openTxt;
+        };
       } else if (isPast && unfinished) {
         sum.textContent = unfinished + " not marked done ⚠︎";
       }
@@ -1191,7 +1226,11 @@
     });
     root.appendChild(wrap);
 
-    if (todayAnchor && !state.filter) {
+    if (state.ordersRestoreScroll) {
+      state.ordersRestoreScroll = false;
+      var restoreY = state.ordersScrollY || 0;
+      setTimeout(function () { window.scrollTo(0, restoreY); }, 30);
+    } else if (todayAnchor && !state.filter) {
       setTimeout(function () {
         try { todayAnchor.scrollIntoView({ block: "center" }); } catch (e) { }
       }, 30);
@@ -1258,7 +1297,12 @@
       row.appendChild(img);
     }
 
-    row.onclick = function () { go("#/order/" + o.id); };
+    row.onclick = function () {
+      // remember exactly where she was in the orders list, so "back" returns her here
+      // instead of resetting to today (e.g. she scrolled to March 2023 to find this order)
+      if (location.hash === "#/orders") { state.ordersScrollY = window.scrollY; state.ordersRestoreScroll = true; }
+      go("#/order/" + o.id);
+    };
     return row;
   }
 
@@ -2925,7 +2969,7 @@
   // ---- keep the home-screen app current (iOS standalone PWAs cache index.html hard, so
   //      new code never loads on its own). Poll a tiny no-store version.json; when a newer
   //      build is live, reload to a build-stamped URL that dodges the cache. ----
-  var BUILD = 28;  // keep in sync with version.json "build" AND the ?v= in index.html
+  var BUILD = 29;  // keep in sync with version.json "build" AND the ?v= in index.html
   var lastVerCheck = 0;
   function checkForUpdate() {
     var now = Date.now();

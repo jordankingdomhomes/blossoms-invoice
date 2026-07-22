@@ -425,6 +425,14 @@ body{
 .ocard p{margin:0; font-size:17px; line-height:1.55; white-space:pre-wrap; color:var(--o-ink)}
 .ocard.avoid{background:var(--o-amber-bg); border-color:var(--o-amber-line)}
 .ocard.avoid p{color:var(--o-amber)}
+
+.odraft-card{background:var(--o-amber-bg); border-color:var(--o-amber-line)}
+.odraft-card h3{color:var(--o-amber)}
+.odraft-row{background:var(--o-card); border-radius:14px; padding:13px 15px; margin:8px 0 0; cursor:pointer; box-shadow:var(--o-sh-1); min-height:56px}
+.odraft-row:active{background:var(--o-bg-2)}
+.odraft-row .oname{font-size:17px; white-space:normal}
+.odraft-row .owhat{font-size:14px; white-space:normal}
+.odraft-more{text-align:center; padding:12px 6px 2px; font-size:14px; font-weight:800; color:var(--o-amber); cursor:pointer}
 .omoneyrow{display:flex; justify-content:space-between; font-size:18px; padding:8px 0; font-weight:600; color:var(--o-ink-2)}
 .omoneyrow b{color:var(--o-ink); font-weight:700}
 .opayrow{align-items:center; gap:10px}
