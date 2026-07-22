@@ -516,6 +516,7 @@
     paintSyncLine();
 
     root.appendChild(buildHero());
+    fitHeroNums();
 
     // ---- find any customer, past or upcoming, right from the front page ----
     var allOrders = live().filter(function (o) { return o.kind === "order"; });
@@ -626,6 +627,20 @@
   }
 
   /* The front-door numbers: what's booked ahead vs what's actually landed. */
+  // shrink each .ohero-num to whatever font size actually fits its real box on
+  // this device — reading scrollWidth/clientWidth forces the browser to lay the
+  // page out first, so this only works once the element is truly on screen.
+  function fitHeroNums() {
+    document.querySelectorAll(".ohero-num").forEach(function (n) {
+      var size = 38;
+      n.style.fontSize = size + "px";
+      while (size > 16 && n.scrollWidth > n.clientWidth) {
+        size -= 1;
+        n.style.fontSize = size + "px";
+      }
+    });
+  }
+
   function buildHero() {
     var year = todayISO().slice(0, 4);
     var fb = futureBooked(), comp = completedIn(year);
@@ -633,14 +648,12 @@
 
     var split = el("div", "ohero-split");
 
-    // whole dollars in the hero (cents don't matter in a summary and cause overflow),
-    // and shrink the font for longer numbers so it never clips the tile
+    // exact dollars-and-cents (never dropped) — starts at full size, then
+    // fitHeroNums() below shrinks each one to its real measured box once it's
+    // actually on screen, so a value like $78,156.50 can never clip the tile
     function num(cents) {
-      var whole = Math.round((cents || 0) / 100);
-      var txt = "$" + whole.toLocaleString("en-US");
-      var n = el("div", "ohero-num", txt);
-      var L = txt.length;
-      n.style.fontSize = L > 8 ? "26px" : L > 7 ? "30px" : L > 6 ? "34px" : "38px";
+      var n = el("div", "ohero-num", money(cents || 0));
+      n.style.fontSize = "38px";
       return n;
     }
 
@@ -2215,7 +2228,7 @@
       var st = el("div", "ohint", CLOUD.lastPullAt ? "Last checked " + new Date(CLOUD.lastPullAt).toLocaleString() : "");
       cc.appendChild(st);
       var sn = el("button", "obtn obtn-plain", "↻ Check now");
-      sn.onclick = function () { live().forEach(function (o) { CLOUD.pending[o.id] = 1; }); runSync(); };
+      sn.onclick = function () { backoff = 2000; runSync(); };
       cc.appendChild(sn);
     } else {
       cc.appendChild(el("p", null, "Off — your orders are only on this phone. Type your code below to turn it on."));
@@ -2557,7 +2570,7 @@
   function loadCloud() {
     try {
       var c = JSON.parse(localStorage.getItem(K_CLOUD) || "null");
-      if (c && c.token) { CLOUD.token = c.token; CLOUD.lastPullAt = c.lastPullAt || null; }
+      if (c && c.token) { CLOUD.token = c.token; CLOUD.lastPullAt = c.lastPullAt || null; CLOUD.pending = c.pending || {}; }
     } catch (e) { }
     // a setup link can still override with a full token: ?cloud=<token>
     try {
@@ -2573,7 +2586,7 @@
     CLOUD.state = CLOUD.token ? "syncing" : "off";
   }
   function saveCloud() {
-    try { localStorage.setItem(K_CLOUD, JSON.stringify({ token: CLOUD.token, lastPullAt: CLOUD.lastPullAt })); } catch (e) { }
+    try { localStorage.setItem(K_CLOUD, JSON.stringify({ token: CLOUD.token, lastPullAt: CLOUD.lastPullAt, pending: CLOUD.pending })); } catch (e) { }
   }
   function cloudOn() { return !!CLOUD.token; }
   function cloudHeaders() { return { "Authorization": "Bearer " + CLOUD.token, "Content-Type": "application/json" }; }
@@ -2641,12 +2654,9 @@
       });
   }
 
-  function cloudPush() {
-    if (!cloudOn()) return Promise.resolve(0);
-    var ids = Object.keys(CLOUD.pending);
-    if (!ids.length) return Promise.resolve(0);
-    var batch = ids.map(getOrder).filter(Boolean);
-    if (!batch.length) { CLOUD.pending = {}; return Promise.resolve(0); }
+  var PUSH_CHUNK = 400;   // server rejects a push over 500 orders at once; stay well under it
+  function pushOneChunk(batch) {
+    if (!batch.length) return Promise.resolve(0);
     return fetch(CLOUD.url + "/api/orders", {
       method: "POST", headers: cloudHeaders(), body: JSON.stringify({ orders: batch })
     }).then(function (r) { if (!r.ok) throw new Error("push " + r.status); return r.json(); })
@@ -2656,8 +2666,25 @@
           var cur = getOrder(o.id);
           if (cur && String(cur.updatedAt) === String(o.updatedAt)) delete CLOUD.pending[o.id];
         });
+        saveCloud();
         return d.written || 0;
       });
+  }
+  function cloudPush() {
+    if (!cloudOn()) return Promise.resolve(0);
+    var ids = Object.keys(CLOUD.pending);
+    if (!ids.length) return Promise.resolve(0);
+    var batch = ids.map(getOrder).filter(Boolean);
+    var stale = ids.length - batch.length;              // ids for orders that no longer exist
+    if (stale) { ids.forEach(function (id) { if (!getOrder(id)) delete CLOUD.pending[id]; }); saveCloud(); }
+    if (!batch.length) return Promise.resolve(0);
+    // send in chunks, one request at a time, so a big backlog (e.g. after being offline
+    // for a while) can never trip the server's per-push order limit
+    var chunks = [];
+    for (var i = 0; i < batch.length; i += PUSH_CHUNK) chunks.push(batch.slice(i, i + PUSH_CHUNK));
+    return chunks.reduce(function (chain, chunk) {
+      return chain.then(function (sum) { return pushOneChunk(chunk).then(function (n) { return sum + n; }); });
+    }, Promise.resolve(0));
   }
 
   /* ---- photos: upload what the cloud is missing, fetch what we lack ---- */
@@ -2710,7 +2737,7 @@
   var syncTimer = null, backoff = 2000;
   function markDirty(id) {
     if (!cloudOn() || CLOUD.suppress) return;
-    if (id) CLOUD.pending[id] = 1;
+    if (id) { CLOUD.pending[id] = 1; saveCloud(); }   // persisted so a failed push isn't forgotten on reopen
     scheduleSync();
   }
   function scheduleSync() {
@@ -2898,7 +2925,7 @@
   // ---- keep the home-screen app current (iOS standalone PWAs cache index.html hard, so
   //      new code never loads on its own). Poll a tiny no-store version.json; when a newer
   //      build is live, reload to a build-stamped URL that dodges the cache. ----
-  var BUILD = 27;  // keep in sync with version.json "build" AND the ?v= in index.html
+  var BUILD = 28;  // keep in sync with version.json "build" AND the ?v= in index.html
   var lastVerCheck = 0;
   function checkForUpdate() {
     var now = Date.now();
@@ -2922,11 +2949,10 @@
   router();
   bootRecover().then(function () { if (!location.hash || location.hash === "#/") router(); });
 
-  // first sync on open: everything already saved locally goes up, anything new comes down
-  if (cloudOn()) {
-    live().forEach(function (o) { CLOUD.pending[o.id] = 1; });
-    setTimeout(runSync, 600);
-  }
+  // first sync on open: whatever's actually pending (persisted from last time) goes up,
+  // anything new comes down. NOT "queue every order" — with 600+ orders that always
+  // exceeded the server's per-push limit and made every open fail with a 413.
+  if (cloudOn()) setTimeout(runSync, 600);
 
   // expose a tiny surface for testing only
   window.BlossomsOrders = {
