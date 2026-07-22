@@ -477,6 +477,7 @@
       }
       return;
     }
+    if (invoiceScreen && !invoiceScreen.hidden) autosaveInvoice();  // leaving the invoice? keep the draft
     showInvoice(false);
     root.innerHTML = "";
     window.scrollTo(0, 0);
@@ -2058,6 +2059,25 @@
       if (pr) setVal("payRemainder", "Pick-up at " + fmtTime(o.eventTime));
     }
   }
+  // brief confirmation using the invoice screen's existing #toast element
+  function flashToast(msg) {
+    var el2 = $("toast"); if (!el2) return;
+    el2.textContent = msg; el2.classList.add("show");
+    clearTimeout(flashToast._t);
+    flashToast._t = setTimeout(function () { el2.classList.remove("show"); }, 2400);
+  }
+
+  // "Save as a draft — finish later": keep what she has, tell her it's safe, show it in My Invoices
+  document.addEventListener("click", function (e) {
+    var t = e.target;
+    if (!t || !t.closest || !t.closest("#draftBtn")) return;
+    autosaveInvoice();
+    var rec = INV.currentId ? getInvoice(INV.currentId) : null;
+    if (!rec) { flashToast("Add a name or an item first, then save."); return; }
+    flashToast("Saved as a draft ✓");
+    setTimeout(function () { go("#/invoices"); }, 450);
+  }, true);
+
   // write back that an invoice was made
   document.addEventListener("click", function (e) {
     var t = e.target;
@@ -2495,7 +2515,8 @@
       body.appendChild(el("div", "owhat", what ? (what.length > 52 ? what.slice(0, 52) + "…" : what) : "—"));
       var meta = el("div", "ometa");
       if (inv.totalCents) meta.appendChild(el("span", "ototal", money(inv.totalCents)));
-      meta.appendChild(el("span", null, inv.pdfAt ? "Sent " + fmtShort(inv.pdfAt.slice(0, 10)) : "Not sent yet"));
+      if (inv.pdfAt) meta.appendChild(el("span", null, "Sent " + fmtShort(inv.pdfAt.slice(0, 10))));
+      else meta.appendChild(el("span", "oinv-draft", "✏️ Draft — tap to finish"));
       body.appendChild(meta);
       card.appendChild(body);
 
@@ -2877,7 +2898,7 @@
   // ---- keep the home-screen app current (iOS standalone PWAs cache index.html hard, so
   //      new code never loads on its own). Poll a tiny no-store version.json; when a newer
   //      build is live, reload to a build-stamped URL that dodges the cache. ----
-  var BUILD = 26;  // keep in sync with version.json "build" AND the ?v= in index.html
+  var BUILD = 27;  // keep in sync with version.json "build" AND the ?v= in index.html
   var lastVerCheck = 0;
   function checkForUpdate() {
     var now = Date.now();

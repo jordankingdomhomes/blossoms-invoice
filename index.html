@@ -24,7 +24,7 @@
   body{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     background:var(--bg); color:var(--ink); font-size:19px; line-height:1.45;
-    padding-bottom:120px;
+    padding-bottom:180px;
   }
   .wrap{max-width:640px; margin:0 auto; padding:0 16px}
 
@@ -177,6 +177,9 @@
   }
   .bigbtn:active{transform:translateY(1px)}
   .bigbtn[disabled]{opacity:.55}
+  .btn-draft{background:#fff; color:var(--pink-deep); box-shadow:none; border:2px solid var(--line);
+    font-size:19px; min-height:56px; padding:14px; margin-bottom:10px}
+  .btn-draft:active{background:var(--pink-soft)}
 
   /* Toast */
   .toast{
@@ -348,6 +351,7 @@
   </div>
 
   <div class="bar"><div class="inner">
+    <button type="button" class="bigbtn btn-draft" id="draftBtn">💾 Save as a draft — finish later</button>
     <button class="bigbtn" id="makeBtn">📄 Make the Invoice</button>
   </div></div>
   </div><!-- /#screen-invoice -->
@@ -755,8 +759,8 @@
     render();
   })();
   </script>
-  <link rel="stylesheet" href="orders.css?v=26">
-  <script src="seed-orders.js?v=26"></script>
-  <script src="orders.js?v=26"></script>
+  <link rel="stylesheet" href="orders.css?v=27">
+  <script src="seed-orders.js?v=27"></script>
+  <script src="orders.js?v=27"></script>
 </body>
 </html>
