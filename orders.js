@@ -472,14 +472,20 @@
 
     if (parts[0] === "invoice") {
       showInvoice(true);
+      mountInvoiceChrome();
       var qp = new URLSearchParams(q);
-      mountInvoiceChrome(qp.get("from"));
       var invId = qp.get("inv");
-      if (invId) {
-        var rec = getInvoice(invId);
-        if (rec) { INV.currentId = rec.id; writeInvoiceForm(rec); }
+      var rec = invId ? getInvoice(invId) : null;
+      if (rec) {
+        INV.currentId = rec.id;
+        invoiceFrom = rec.orderId || null;        // remember the link WITHOUT re-running the order-prefill below
+        writeInvoiceForm(rec);
+      } else if (qp.get("from")) {
+        INV.currentId = null;
+        prefillInvoiceFromOrder(qp.get("from"));  // she chose "Make an invoice for this order" — pull its details in
       } else if (qp.get("new")) {
-        INV.currentId = null;                      // a genuinely blank one
+        INV.currentId = null;
+        invoiceFrom = null;                       // a genuinely blank one — making it IS what creates the order
         writeInvoiceForm({ date: todayISO(), items: [] });
       }
       return;
@@ -562,13 +568,11 @@
       fillHome();
     }
 
-    var bNew = el("button", "obtn obtn-primary obtn-xl", "➕  New Order");
-    bNew.onclick = function () { go("#/new"); };
-    root.appendChild(bNew);
-
-    var bInv = el("button", "obtn obtn-secondary obtn-xl", "📄  Make an Invoice");
+    // making the invoice IS how a new order starts — there's no separate "New Order" step
+    var bInv = el("button", "obtn obtn-primary obtn-xl", "📄  Make an Invoice");
     bInv.onclick = function () { INV.currentId = null; go("#/invoice?new=1"); };
     root.appendChild(bInv);
+    root.appendChild(el("div", "ohint2", "Every new order starts here — making the invoice creates it"));
 
     var nInv = liveInvoices().length;
     var bMyInv = el("button", "obtn obtn-plain", "🗂  My Invoices" + (nInv ? "  (" + nInv + ")" : ""));
@@ -651,8 +655,8 @@
 
     if (state.tab === "list") renderList(); else renderCalendar();
 
-    var bNew = el("button", "obtn obtn-primary", "➕  New Order");
-    bNew.onclick = function () { go("#/new"); };
+    var bNew = el("button", "obtn obtn-primary", "📄  Make an Invoice");
+    bNew.onclick = function () { INV.currentId = null; go("#/invoice?new=1"); };
     root.appendChild(bNew);
   }
 
@@ -1325,7 +1329,7 @@
       return e;
     }
     e.appendChild(el("h3", null, "No orders yet"));
-    e.appendChild(el("p", null, "Tap ➕ New Order to write down your first one. Or paste one straight from your Notes."));
+    e.appendChild(el("p", null, "Tap 📄 Make an Invoice to write down your first one — the order is created automatically. Or paste one straight from your Notes."));
     var b2 = el("button", "obtn obtn-plain", "📋 Paste a note from Notes");
     b2.onclick = function () { go("#/new?paste=1"); };
     e.appendChild(b2);
@@ -2087,15 +2091,18 @@
     e.dispatchEvent(new Event("change", { bubbles: true }));
   }
   var invoiceChrome = null, invoiceFrom = null;
-  function mountInvoiceChrome(fromId) {
-    if (!invoiceChrome) {
-      invoiceChrome = topbar("Back to my orders", "#/");
-      invoiceChrome.style.background = "var(--o-bg)";
-      if (invoiceScreen) invoiceScreen.insertBefore(invoiceChrome, invoiceScreen.firstChild);
-    }
-    if (!fromId) { invoiceFrom = null; return; }
-    var o = getOrder(fromId);
-    if (!o) { invoiceFrom = null; return; }
+  function mountInvoiceChrome() {
+    if (invoiceChrome) return;
+    invoiceChrome = topbar("Back to my orders", "#/");
+    invoiceChrome.style.background = "var(--o-bg)";
+    if (invoiceScreen) invoiceScreen.insertBefore(invoiceChrome, invoiceScreen.firstChild);
+  }
+  // she tapped "Make an invoice for this order" from an existing order's detail page —
+  // pull that order's details in so she isn't retyping them
+  function prefillInvoiceFromOrder(fromId) {
+    invoiceFrom = null;
+    var o = fromId ? getOrder(fromId) : null;
+    if (!o) return;
     invoiceFrom = o.id;
     // prefill by driving the DOM — the invoice script is a closed IIFE
     setVal("deliveryDate", o.eventDate);
@@ -2105,10 +2112,25 @@
       var sd = $("segDelivery"); if (sd) sd.click();
       if (o.address) setVal("addrFull", o.address); // never touch #addrSearch (fires the lookup)
     }
-    var desc = document.querySelector("#items .item .idesc");
-    var price = document.querySelector("#items .item .iprice");
-    if (desc) setVal(desc.id || (desc.id = "o_desc0"), o.what || "");
-    if (price && o.totalCents != null) setVal(price.id || (price.id = "o_price0"), (o.totalCents / 100).toString());
+    // if her order's "what" is our own "desc — $price" per-line format (i.e. this order
+    // came FROM an earlier invoice), rebuild those exact item rows with real prices;
+    // otherwise (an older or hand-typed order) fall back to one row with the whole total
+    var lines = (o.what || "").split("\n").map(function (s) { return s.trim(); }).filter(Boolean);
+    var parsed = lines.map(function (line) {
+      var m = /^(.*?)\s+—\s+\$([\d,]+(?:\.\d{1,2})?)$/.exec(line);
+      return m ? { desc: m[1], price: m[2].replace(/,/g, "") } : null;
+    });
+    var items = (parsed.length && parsed.every(Boolean)) ? parsed
+      : [{ desc: o.what || "", price: o.totalCents != null ? (o.totalCents / 100).toString() : "" }];
+    var addBtn = $("addItem"), guard = 0;
+    while (document.querySelectorAll("#items .item").length < items.length && guard++ < 40) addBtn.click();
+    var rows = document.querySelectorAll("#items .item");
+    for (var i = 0; i < rows.length; i++) {
+      var it = items[i] || { desc: "", price: "" };   // blank out any extra row left over from a previous invoice
+      var d = rows[i].querySelector(".idesc"), p2 = rows[i].querySelector(".iprice");
+      if (d) { d.value = it.desc; d.dispatchEvent(new Event("input", { bubbles: true })); }
+      if (p2) { p2.value = it.price; p2.dispatchEvent(new Event("input", { bubbles: true })); }
+    }
     var p = paid(o);
     if (p > 0) setVal("deposit", (p / 100).toString());
     if (o.fulfillment === "pickup" && o.eventTime) {
@@ -2135,19 +2157,58 @@
     setTimeout(function () { go("#/invoices"); }, 450);
   }, true);
 
-  // write back that an invoice was made
+  // The invoice IS the order: making one writes (or updates) the matching order —
+  // she never fills out a separate "New Order" form.
+  function applyInvoiceToOrder(o, f) {
+    o.deletedAt = null;   // regenerating its invoice means the order is active again, even if it was deleted
+    o.name = f.billTo || o.name;
+    if (f.date) o.eventDate = f.date;
+    if (f.fulfillment) o.fulfillment = f.fulfillment;
+    if (f.address) o.address = f.address;
+    if (f.items && f.items.length) {
+      o.what = f.items.map(function (it) {
+        var d = (it.desc || "").trim(); if (!d) return null;
+        var p = parseMoney(it.price);
+        return d + (p ? " — " + money(p) : "");
+      }).filter(Boolean).join("\n");
+      o.totalCents = invoiceTotalCents(f);
+    }
+    if (f.sigPhone) o.phone = f.sigPhone;
+    if (f.sigEmail) o.email = f.sigEmail;
+    // the invoice's deposit line only ever becomes a real payment once, the first
+    // time this invoice is generated — re-printing it later shouldn't double it up
+    var depCents = parseMoney(f.deposit);
+    if (depCents > 0 && !(o.payments && o.payments.length)) {
+      var kindK = depCents >= (o.totalCents || 0) ? "final" : "deposit";
+      o.payments = (o.payments || []).concat([{ id: uuid(), cents: depCents, method: "zelle", date: todayISO(), kind: kindK }]);
+    }
+    o.dateConfirmed = true;
+    o.tentative = false;
+    return o;
+  }
+
   document.addEventListener("click", function (e) {
     var t = e.target;
     if (!t || !t.closest) return;
     if (t.closest("#makeBtn")) {
-      if (invoiceFrom) {
-        var o = getOrder(invoiceFrom);
-        if (o) { o.invoicedAt = nowISO(); upsert(o); }
+      var f = readInvoiceForm();
+      var o = invoiceFrom ? getOrder(invoiceFrom) : null;
+      var justCreated = false;
+      if (!o && !invoiceIsEmpty(f)) {                  // no order linked yet, and there's real content — this IS a new order
+        o = blank();
+        invoiceFrom = o.id;
+        justCreated = true;
+      }
+      if (o) {
+        applyInvoiceToOrder(o, f);
+        o.invoicedAt = nowISO();
+        upsert(o);
+        if (justCreated) flashToast("Order created ✓");
       }
       // make sure the finished invoice is stored, and note that a PDF went out
       autosaveInvoice();
       var rec = INV.currentId ? getInvoice(INV.currentId) : null;
-      if (rec) { rec.pdfAt = nowISO(); rec.updatedAt = nowISO(); saveInvoices(); }
+      if (rec) { rec.pdfAt = nowISO(); rec.updatedAt = nowISO(); rec.orderId = o ? o.id : (rec.orderId || null); saveInvoices(); }
     }
   }, true);
 
@@ -2969,7 +3030,7 @@
   // ---- keep the home-screen app current (iOS standalone PWAs cache index.html hard, so
   //      new code never loads on its own). Poll a tiny no-store version.json; when a newer
   //      build is live, reload to a build-stamped URL that dodges the cache. ----
-  var BUILD = 29;  // keep in sync with version.json "build" AND the ?v= in index.html
+  var BUILD = 30;  // keep in sync with version.json "build" AND the ?v= in index.html
   var lastVerCheck = 0;
   function checkForUpdate() {
     var now = Date.now();
