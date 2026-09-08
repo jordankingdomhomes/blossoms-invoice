@@ -2208,7 +2208,7 @@
       // make sure the finished invoice is stored, and note that a PDF went out
       autosaveInvoice();
       var rec = INV.currentId ? getInvoice(INV.currentId) : null;
-      if (rec) { rec.pdfAt = nowISO(); rec.updatedAt = nowISO(); rec.orderId = o ? o.id : (rec.orderId || null); saveInvoices(); }
+      if (rec) { rec.pdfAt = nowISO(); rec.updatedAt = nowISO(); rec.orderId = o ? o.id : (rec.orderId || null); saveInvoices(); markInvDirty(rec.id); }
     }
   }, true);
 
@@ -2583,6 +2583,7 @@
     rec.updatedAt = nowISO();
     rec.totalCents = invoiceTotalCents(f);
     saveInvoices();
+    markInvDirty(rec.id);       // every keystroke's autosave also queues the cloud copy
   }
   function scheduleInvoiceSave() {
     clearTimeout(invSaveTimer);
@@ -2646,7 +2647,7 @@
       del.onclick = function (ev) {
         ev.stopPropagation();
         if (!confirm("Delete the invoice for " + (inv.billTo || "this customer") + "?")) return;
-        inv.deletedAt = nowISO(); saveInvoices(); router();
+        inv.deletedAt = nowISO(); inv.updatedAt = nowISO(); saveInvoices(); markInvDirty(inv.id); router();
       };
       root.appendChild(del);
     });
@@ -2667,15 +2668,21 @@
     url: "https://blossoms-sync-892609853582.us-east1.run.app",
     token: null,
     lastPullAt: null,
+    lastInvPullAt: null,
     state: "off",        // off | syncing | ok | offline | error
     pending: {},         // order ids waiting to go up
+    pendingInv: {},      // invoice ids waiting to go up
+    invBackfilled: false, // one-time: this device's pre-sync invoices have been queued
     suppress: false      // true while applying server data, so we don't echo it back
   };
 
   function loadCloud() {
     try {
       var c = JSON.parse(localStorage.getItem(K_CLOUD) || "null");
-      if (c && c.token) { CLOUD.token = c.token; CLOUD.lastPullAt = c.lastPullAt || null; CLOUD.pending = c.pending || {}; }
+      if (c && c.token) {
+        CLOUD.token = c.token; CLOUD.lastPullAt = c.lastPullAt || null; CLOUD.pending = c.pending || {};
+        CLOUD.lastInvPullAt = c.lastInvPullAt || null; CLOUD.pendingInv = c.pendingInv || {}; CLOUD.invBackfilled = !!c.invBackfilled;
+      }
     } catch (e) { }
     // a setup link can still override with a full token: ?cloud=<token>
     try {
@@ -2691,7 +2698,12 @@
     CLOUD.state = CLOUD.token ? "syncing" : "off";
   }
   function saveCloud() {
-    try { localStorage.setItem(K_CLOUD, JSON.stringify({ token: CLOUD.token, lastPullAt: CLOUD.lastPullAt, pending: CLOUD.pending })); } catch (e) { }
+    try {
+      localStorage.setItem(K_CLOUD, JSON.stringify({
+        token: CLOUD.token, lastPullAt: CLOUD.lastPullAt, pending: CLOUD.pending,
+        lastInvPullAt: CLOUD.lastInvPullAt, pendingInv: CLOUD.pendingInv, invBackfilled: CLOUD.invBackfilled
+      }));
+    } catch (e) { }
   }
   function cloudOn() { return !!CLOUD.token; }
   function cloudHeaders() { return { "Authorization": "Bearer " + CLOUD.token, "Content-Type": "application/json" }; }
@@ -2704,7 +2716,7 @@
   function paintSyncLine() {
     var el2 = $("osync");
     if (!el2) return;
-    var n = Object.keys(CLOUD.pending).length;
+    var n = Object.keys(CLOUD.pending).length + Object.keys(CLOUD.pendingInv).length;
     var map = {
       off: ["", ""],
       syncing: ["osync-work", n ? "Saving " + n + " change" + (n === 1 ? "" : "s") + "…" : "Saving…"],
@@ -2792,6 +2804,65 @@
     }, Promise.resolve(0));
   }
 
+  /* ---- invoices ride the same sync: push changed ones up, pull new ones down ---- */
+  function mergeIncomingInvoices(list) {
+    var changed = 0;
+    (list || []).forEach(function (inc) {
+      if (!inc || !inc.id) return;
+      var cur = getInvoice(inc.id);
+      if (!cur) { INV.list.push(inc); changed++; return; }
+      if (String(inc.updatedAt || "") > String(cur.updatedAt || "")) {
+        Object.assign(cur, inc); changed++;   // keep the same object so INV.currentId stays valid
+      }
+    });
+    if (changed) saveInvoices();
+    return changed;
+  }
+  var didFullInvPull = false;
+  function cloudPullInvoices() {
+    if (!cloudOn()) return Promise.resolve(0);
+    var full = !didFullInvPull;               // first pull grabs everything (same self-heal as orders)
+    didFullInvPull = true;
+    var u = CLOUD.url + "/api/invoices" + ((!full && CLOUD.lastInvPullAt) ? "?since=" + encodeURIComponent(CLOUD.lastInvPullAt) : "");
+    return fetch(u, { headers: cloudHeaders() })
+      .then(function (r) { if (!r.ok) throw new Error("inv pull " + r.status); return r.json(); })
+      .then(function (d) {
+        var n = mergeIncomingInvoices(d.invoices);
+        CLOUD.lastInvPullAt = d.serverTime || CLOUD.lastInvPullAt;
+        saveCloud();
+        // never re-render while she's typing on the invoice screen — her autosave wins
+        if (n && (!invoiceScreen || invoiceScreen.hidden)) router();
+        return n;
+      });
+  }
+  function pushOneInvChunk(batch) {
+    if (!batch.length) return Promise.resolve(0);
+    return fetch(CLOUD.url + "/api/invoices", {
+      method: "POST", headers: cloudHeaders(), body: JSON.stringify({ invoices: batch })
+    }).then(function (r) { if (!r.ok) throw new Error("inv push " + r.status); return r.json(); })
+      .then(function (d) {
+        batch.forEach(function (v) {
+          var cur = getInvoice(v.id);
+          if (cur && String(cur.updatedAt) === String(v.updatedAt)) delete CLOUD.pendingInv[v.id];
+        });
+        saveCloud();
+        return d.written || 0;
+      });
+  }
+  function cloudPushInvoices() {
+    if (!cloudOn()) return Promise.resolve(0);
+    var ids = Object.keys(CLOUD.pendingInv);
+    if (!ids.length) return Promise.resolve(0);
+    var batch = ids.map(getInvoice).filter(Boolean);
+    if (ids.length - batch.length) { ids.forEach(function (id) { if (!getInvoice(id)) delete CLOUD.pendingInv[id]; }); saveCloud(); }
+    if (!batch.length) return Promise.resolve(0);
+    var chunks = [];
+    for (var i = 0; i < batch.length; i += PUSH_CHUNK) chunks.push(batch.slice(i, i + PUSH_CHUNK));
+    return chunks.reduce(function (chain, chunk) {
+      return chain.then(function (sum) { return pushOneInvChunk(chunk).then(function (n) { return sum + n; }); });
+    }, Promise.resolve(0));
+  }
+
   /* ---- photos: upload what the cloud is missing, fetch what we lack ---- */
   function syncPhotos() {
     if (!cloudOn()) return Promise.resolve();
@@ -2845,6 +2916,11 @@
     if (id) { CLOUD.pending[id] = 1; saveCloud(); }   // persisted so a failed push isn't forgotten on reopen
     scheduleSync();
   }
+  function markInvDirty(id) {
+    if (!cloudOn() || CLOUD.suppress) return;
+    if (id) { CLOUD.pendingInv[id] = 1; saveCloud(); }
+    scheduleSync();
+  }
   function scheduleSync() {
     if (!cloudOn()) return;
     setSyncState("syncing");
@@ -2857,11 +2933,14 @@
     setSyncState("syncing");
     cloudPush()
       .then(cloudPull)
+      .then(cloudPushInvoices)
+      .then(cloudPullInvoices)
       .then(syncPhotos)
       .then(function () {
         backoff = 2000;
-        setSyncState(Object.keys(CLOUD.pending).length ? "syncing" : "ok");
-        if (Object.keys(CLOUD.pending).length) scheduleSync();
+        var left = Object.keys(CLOUD.pending).length + Object.keys(CLOUD.pendingInv).length;
+        setSyncState(left ? "syncing" : "ok");
+        if (left) scheduleSync();
       })
       .catch(function (e) {
         console.warn("sync failed", e);
@@ -3030,7 +3109,7 @@
   // ---- keep the home-screen app current (iOS standalone PWAs cache index.html hard, so
   //      new code never loads on its own). Poll a tiny no-store version.json; when a newer
   //      build is live, reload to a build-stamped URL that dodges the cache. ----
-  var BUILD = 30;  // keep in sync with version.json "build" AND the ?v= in index.html
+  var BUILD = 31;  // keep in sync with version.json "build" AND the ?v= in index.html
   var lastVerCheck = 0;
   function checkForUpdate() {
     var now = Date.now();
@@ -3057,7 +3136,16 @@
   // first sync on open: whatever's actually pending (persisted from last time) goes up,
   // anything new comes down. NOT "queue every order" — with 600+ orders that always
   // exceeded the server's per-push limit and made every open fail with a 413.
-  if (cloudOn()) setTimeout(runSync, 600);
+  if (cloudOn()) {
+    // one-time: invoices made before invoice-sync existed get queued for the cloud
+    // (safe at any count — pushes are chunked at 400)
+    if (!CLOUD.invBackfilled) {
+      INV.list.forEach(function (v) { if (v && v.id) CLOUD.pendingInv[v.id] = 1; });
+      CLOUD.invBackfilled = true;
+      saveCloud();
+    }
+    setTimeout(runSync, 600);
+  }
 
   // expose a tiny surface for testing only
   window.BlossomsOrders = {

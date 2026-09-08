@@ -28,6 +28,7 @@ const db = new Firestore();               // uses the (default) database — the
 const storage = new Storage();
 const bucket = () => storage.bucket(BUCKET);
 const ORDERS = db.collection("orders");
+const INVOICES = db.collection("invoices");
 
 const app = express();
 app.disable("x-powered-by");
@@ -123,8 +124,10 @@ async function maybeSnapshot() {
   try {
     const snap = await ORDERS.get();
     const all = snap.docs.map(d => d.data());
+    const isnap = await INVOICES.get();
+    const allInv = isnap.docs.map(d => d.data());
     const name = "snapshots/" + new Date().toISOString().replace(/[:.]/g, "-") + ".json";
-    await bucket().file(name).save(JSON.stringify({ takenAt: new Date().toISOString(), orders: all }), {
+    await bucket().file(name).save(JSON.stringify({ takenAt: new Date().toISOString(), orders: all, invoices: allInv }), {
       contentType: "application/json", resumable: false
     });
     // prune to the most recent 90
@@ -163,6 +166,50 @@ app.post("/api/orders", authed, async (req, res) => {
     res.json({ ok: true, written: written.length, serverTime: new Date().toISOString() });
   } catch (e) {
     console.error("push failed", e);
+    res.status(500).json({ error: "push failed" });
+  }
+});
+
+/* ---- INVOICES: same pull/push contract as orders, own collection ---- */
+app.get("/api/invoices", authed, async (req, res) => {
+  try {
+    const since = req.query.since || "";
+    let q = INVOICES;
+    if (since) q = q.where("updatedAt", ">", String(since));
+    const snap = await q.get();
+    const invoices = snap.docs.map(d => d.data());
+    res.json({ invoices, serverTime: new Date().toISOString() });
+  } catch (e) {
+    console.error("invoice pull failed", e);
+    res.status(500).json({ error: "pull failed" });
+  }
+});
+
+app.post("/api/invoices", authed, async (req, res) => {
+  const incoming = Array.isArray(req.body && req.body.invoices) ? req.body.invoices : null;
+  if (!incoming) return res.status(400).json({ error: "expected {invoices:[...]}" });
+  if (incoming.length > 500) return res.status(413).json({ error: "too many invoices in one push" });
+  try {
+    const written = [];
+    // read-then-write per invoice so an older device can't clobber a newer edit
+    for (const v of incoming) {
+      if (!v || typeof v.id !== "string" || !v.id) continue;
+      const ref = INVOICES.doc(v.id);
+      await db.runTransaction(async tx => {
+        const cur = await tx.get(ref);
+        if (cur.exists) {
+          const mine = String(v.updatedAt || "");
+          const theirs = String((cur.data() || {}).updatedAt || "");
+          if (mine <= theirs) return;          // server copy is newer — keep it
+        }
+        tx.set(ref, v);
+        written.push(v.id);
+      });
+    }
+    if (written.length) await maybeSnapshot();
+    res.json({ ok: true, written: written.length, serverTime: new Date().toISOString() });
+  } catch (e) {
+    console.error("invoice push failed", e);
     res.status(500).json({ error: "push failed" });
   }
 });
