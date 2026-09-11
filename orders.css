@@ -435,6 +435,15 @@ body{
 .odraft-row .oname{font-size:17px; white-space:normal}
 .odraft-row .owhat{font-size:14px; white-space:normal}
 .odraft-more{text-align:center; padding:12px 6px 2px; font-size:14px; font-weight:800; color:var(--o-amber); cursor:pointer}
+.odraft-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:2px}
+.odraft-head h3{margin:0}
+.odraft-editbtn{flex:0 0 auto; min-height:44px; padding:8px 14px; border-radius:12px; border:1px solid var(--o-amber-line); background:var(--o-card); color:var(--o-amber); font:inherit; font-size:15px; font-weight:800; cursor:pointer}
+.odraft-hint{font-size:14px; font-weight:700; color:var(--o-amber); margin:4px 0 6px}
+.odraft-swipe{position:relative; border-radius:14px; overflow:hidden; margin:8px 0 0}
+.odraft-swipe .odraft-row{margin:0; position:relative; z-index:1}
+.odraft-del{position:absolute; inset:0; display:flex; align-items:center; justify-content:flex-end; padding-right:22px; background:var(--o-red); color:#fff; font-weight:800; font-size:17px; border-radius:14px; opacity:.85}
+.odraft-swipe.will-delete .odraft-del{opacity:1}
+.odraft-card.editing .odraft-row{cursor:grab}
 .omoneyrow{display:flex; justify-content:space-between; font-size:18px; padding:8px 0; font-weight:600; color:var(--o-ink-2)}
 .omoneyrow b{color:var(--o-ink); font-weight:700}
 .opayrow{align-items:center; gap:10px}

@@ -441,7 +441,7 @@
   var invoiceScreen = $("screen-invoice");
 
   var state = { tab: "list", tickerMonth: monthKey(todayISO()), calMonth: monthKey(todayISO()), justSaved: null, justSavedId: null, filter: null, monthFilter: null, lightbox: null,
-    expandedMonths: {}, ordersScrollY: null, ordersRestoreScroll: false, detailFrom: null };
+    expandedMonths: {}, ordersScrollY: null, ordersRestoreScroll: false, detailFrom: null, draftEdit: false };
 
   function go(hash) { location.hash = hash; }
   function showInvoice(on) {
@@ -492,9 +492,14 @@
         invoiceFrom = null;                       // a genuinely blank one — making it IS what creates the order
         writeInvoiceForm({ date: todayISO(), items: [] });
       }
+      // filling the form fired synthetic input events — that isn't HER typing. Reset so that
+      // just looking and leaving never leaves a stray draft behind.
+      invTouched = false; clearTimeout(invSaveTimer);
       return;
     }
-    if (invoiceScreen && !invoiceScreen.hidden) autosaveInvoice();  // leaving the invoice? keep the draft
+    // leaving the invoice? keep the draft — but only if she actually touched it (or it already exists);
+    // merely opening "Make an invoice for this order" and backing out must not create one
+    if (invoiceScreen && !invoiceScreen.hidden && (invTouched || INV.currentId)) autosaveInvoice();
     showInvoice(false);
     root.innerHTML = "";
 
@@ -585,17 +590,57 @@
     root.appendChild(bMyInv);
 
     // ---- drafts waiting to be finished — only shows up while one exists ----
-    var drafts = liveInvoices().filter(function (i) { return !i.pdfAt; });
+    var drafts = liveInvoices().filter(function (i) { return !i.pdfAt && !isStaleDraft(i); });
+    if (!drafts.length) state.draftEdit = false;
     if (drafts.length) {
-      var dc = el("div", "ocard odraft-card");
-      dc.appendChild(el("h3", null, "✏️  Draft" + (drafts.length === 1 ? "" : "s") + " waiting"));
+      var editing = !!state.draftEdit;
+      var dc = el("div", "ocard odraft-card" + (editing ? " editing" : ""));
+      var dh = el("div", "odraft-head");
+      dh.appendChild(el("h3", null, "✏️  Draft" + (drafts.length === 1 ? "" : "s") + " waiting"));
+      var edB = el("button", "odraft-editbtn", editing ? "Done" : "🗑  Remove a draft");
+      edB.onclick = function () { state.draftEdit = !state.draftEdit; router(); };
+      dh.appendChild(edB);
+      dc.appendChild(dh);
+      if (editing) dc.appendChild(el("div", "odraft-hint", "Swipe a draft to the left to delete it"));
+
+      function removeDraft(inv) {
+        inv.deletedAt = nowISO(); inv.updatedAt = nowISO();
+        saveInvoices(); markInvDirty(inv.id);
+        router();
+      }
+      // right-to-left swipe = delete; only live while she's tapped "Remove a draft", so a
+      // stray scroll-swipe on the home screen can never throw away her work
+      function armSwipe(wrap, row, inv) {
+        var startX = null, dx = 0, w = 0;
+        row.style.touchAction = "pan-y";
+        row.addEventListener("pointerdown", function (e) { startX = e.clientX; dx = 0; w = row.offsetWidth; row.style.transition = "none"; try { row.setPointerCapture(e.pointerId); } catch (_) { } });
+        row.addEventListener("pointermove", function (e) {
+          if (startX == null) return;
+          dx = Math.min(0, e.clientX - startX);
+          row.style.transform = "translateX(" + dx + "px)";
+          wrap.classList.toggle("will-delete", -dx > w * 0.4);
+        });
+        function end() {
+          if (startX == null) return;
+          var go = -dx > w * 0.4; startX = null;
+          row.style.transition = "transform .15s";
+          if (go) { row.style.transform = "translateX(-110%)"; setTimeout(function () { removeDraft(inv); }, 150); }
+          else { row.style.transform = ""; wrap.classList.remove("will-delete"); }
+        }
+        row.addEventListener("pointerup", end); row.addEventListener("pointercancel", end);
+      }
+
       drafts.slice(0, 4).forEach(function (inv) {
+        var wrap = el("div", "odraft-swipe");
+        wrap.appendChild(el("div", "odraft-del", "Delete"));
         var row = el("div", "odraft-row");
         row.appendChild(el("div", "oname", inv.billTo || "No name yet"));
         var what = ((inv.items && inv.items[0] && inv.items[0].desc) || "").replace(/\s+/g, " ").trim();
         row.appendChild(el("div", "owhat" + (what ? "" : " empty"), what || "Tap to finish this invoice"));
-        row.onclick = function () { go("#/invoice?inv=" + inv.id); };
-        dc.appendChild(row);
+        if (editing) armSwipe(wrap, row, inv);
+        else row.onclick = function () { go("#/invoice?inv=" + inv.id); };
+        wrap.appendChild(row);
+        dc.appendChild(wrap);
       });
       if (drafts.length > 4) {
         var more = el("div", "odraft-more", "+" + (drafts.length - 4) + " more draft" + (drafts.length - 4 === 1 ? "" : "s") + " — see My Invoices");
@@ -2190,6 +2235,10 @@
       var pr = $("payRemainder");
       if (pr) setVal("payRemainder", "Pick-up at " + fmtTime(o.eventTime));
     }
+    // the prefill above fired a burst of synthetic input events; DON'T let the debounced
+    // autosave turn merely LOOKING at "Make an invoice for this order" into a stray draft —
+    // a record only gets created once she actually types or taps "Save as a draft"
+    clearTimeout(invSaveTimer);
   }
   // brief confirmation using the invoice screen's existing #toast element
   function flashToast(msg) {
@@ -2564,6 +2613,25 @@
       .sort(function (a, b) { return (b.updatedAt || "") < (a.updatedAt || "") ? -1 : 1; });
   }
   function getInvoice(id) { for (var i = 0; i < INV.list.length; i++) if (INV.list[i].id === id) return INV.list[i]; return null; }
+  // a draft whose order has ALREADY had its invoice made (or is finished) is a leftover from
+  // opening "Make an invoice for this order" and leaving — not something she means to finish
+  function isStaleDraft(inv) {
+    if (!inv || inv.deletedAt || inv.pdfAt || !inv.orderId) return false;
+    var o = getOrder(inv.orderId);
+    return !!(o && (o.invoicedAt || o.done));
+  }
+  function pruneStaleDrafts() {
+    var cutoff = Date.now() - 60 * 60 * 1000, n = 0;   // an hour's grace so a "Make another" she's mid-way through isn't swept up
+    INV.list.forEach(function (inv) {
+      if (!isStaleDraft(inv)) return;
+      var t = Date.parse(inv.updatedAt || inv.createdAt || "") || 0;
+      if (t > cutoff) return;
+      inv.deletedAt = nowISO(); inv.updatedAt = nowISO(); n++;
+      markInvDirty(inv.id);
+    });
+    if (n) saveInvoices();
+    return n;
+  }
 
   function ival(id) { var e = $(id); return e ? e.value : ""; }
   function readInvoiceForm() {
@@ -2619,7 +2687,7 @@
     invLoading = false;
   }
 
-  var invLoading = false, invSaveTimer = null;
+  var invLoading = false, invSaveTimer = null, invTouched = false;   // invTouched: she actually typed/tapped since the form was filled
   function autosaveInvoice() {
     if (invLoading) return;
     if (!invoiceScreen || invoiceScreen.hidden) return;
@@ -2644,11 +2712,11 @@
   // one listener on the whole invoice screen catches every field
   document.addEventListener("input", function (e) {
     if (!invoiceScreen || invoiceScreen.hidden) return;
-    if (e.target && e.target.closest && e.target.closest("#screen-invoice")) scheduleInvoiceSave();
+    if (e.target && e.target.closest && e.target.closest("#screen-invoice")) { invTouched = true; scheduleInvoiceSave(); }
   }, true);
   document.addEventListener("click", function (e) {
     if (!invoiceScreen || invoiceScreen.hidden) return;
-    if (e.target && e.target.closest && e.target.closest("#segPickup,#segDelivery,#addItem,.item .rm")) scheduleInvoiceSave();
+    if (e.target && e.target.closest && e.target.closest("#segPickup,#segDelivery,#addItem,.item .rm")) { invTouched = true; scheduleInvoiceSave(); }
   }, true);
 
   /* ---- the saved-invoice list ---- */
@@ -2882,6 +2950,7 @@
       .then(function (r) { if (!r.ok) throw new Error("inv pull " + r.status); return r.json(); })
       .then(function (d) {
         var n = mergeIncomingInvoices(d.invoices);
+        if (n && pruneStaleDrafts()) n++;   // a leftover draft synced in from another device gets swept too
         CLOUD.lastInvPullAt = d.serverTime || CLOUD.lastInvPullAt;
         saveCloud();
         // never re-render while she's typing on the invoice screen — her autosave wins
@@ -3163,7 +3232,7 @@
   // ---- keep the home-screen app current (iOS standalone PWAs cache index.html hard, so
   //      new code never loads on its own). Poll a tiny no-store version.json; when a newer
   //      build is live, reload to a build-stamped URL that dodges the cache. ----
-  var BUILD = 32;  // keep in sync with version.json "build" AND the ?v= in index.html
+  var BUILD = 33;  // keep in sync with version.json "build" AND the ?v= in index.html
   var lastVerCheck = 0;
   function checkForUpdate() {
     var now = Date.now();
@@ -3190,6 +3259,7 @@
   // first sync on open: whatever's actually pending (persisted from last time) goes up,
   // anything new comes down. NOT "queue every order" — with 600+ orders that always
   // exceeded the server's per-push limit and made every open fail with a 413.
+  pruneStaleDrafts();   // leftover drafts for orders already invoiced/finished — cleared here and after every invoice pull
   if (cloudOn()) {
     // one-time: invoices made before invoice-sync existed get queued for the cloud
     // (safe at any count — pushes are chunked at 400)
