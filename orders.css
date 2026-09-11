@@ -276,8 +276,8 @@ body{
 .ostrip.red{background:var(--o-red-bg); border:1px solid var(--o-red-line); color:var(--o-red)}
 .ostrip.good{background:var(--o-good-bg); border:1px solid var(--o-good-line); color:var(--o-good)}
 .ostrip button{
-  margin-left:auto; flex:0 0 auto; border:none; border-radius:12px; padding:11px 15px; min-height:46px;
-  font:inherit; font-size:15px; font-weight:800; cursor:pointer;
+  margin-left:auto; flex:0 0 auto; border:none; border-radius:12px; padding:13px 18px; min-height:56px;
+  font:inherit; font-size:16px; font-weight:800; cursor:pointer;
   background:rgba(0,0,0,.07); color:inherit;
 }
 .ostrip.tappable{cursor:pointer}
@@ -353,6 +353,8 @@ body{
 
 /* home-page customer search */
 .ohomesearch{margin:16px 0 4px}
+.ocompsearch{margin:20px 0 6px}
+.ocompsearch .ohint2{padding:6px 6px 0}
 .ohomesearch > input{
   width:100%; box-sizing:border-box; font:inherit; font-size:18px; font-weight:600;
   color:var(--o-ink); background:var(--o-card); -webkit-appearance:none; appearance:none;

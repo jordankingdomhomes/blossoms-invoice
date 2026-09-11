@@ -441,7 +441,7 @@
   var invoiceScreen = $("screen-invoice");
 
   var state = { tab: "list", tickerMonth: monthKey(todayISO()), calMonth: monthKey(todayISO()), justSaved: null, justSavedId: null, filter: null, monthFilter: null, lightbox: null,
-    expandedMonths: {}, ordersScrollY: null, ordersRestoreScroll: false };
+    expandedMonths: {}, ordersScrollY: null, ordersRestoreScroll: false, detailFrom: null };
 
   function go(hash) { location.hash = hash; }
   function showInvoice(on) {
@@ -469,6 +469,10 @@
     // by a leftover scroll position from an unrelated earlier visit
     var keepsScrollArm = parts[0] === "order" || parts[0] === "edit" || (parts[0] === "orders" && parts[1] !== "calendar");
     if (!keepsScrollArm) state.ordersRestoreScroll = false;
+    // "opened from Revenue" survives detail <-> edit; consumed on the way back to Revenue (and the
+    // list scrolls into view so her search results are what she sees); dropped anywhere else
+    if (parts[0] === "completed" && state.detailFrom === "#/completed") { state.detailFrom = null; state.scrollCompletedList = true; }
+    else if (parts[0] !== "order" && parts[0] !== "edit") state.detailFrom = null;
 
     if (parts[0] === "invoice") {
       showInvoice(true);
@@ -565,6 +569,7 @@
         state.homeSearch = hi.value;
         clearTimeout(hdeb); hdeb = setTimeout(fillHome, 140);
       });
+      hi.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); hi.blur(); } });   // "Search" key = drop the keyboard
       fillHome();
     }
 
@@ -933,13 +938,13 @@
     var series = yearsDesc.map(function (y) { return { year: y, color: yearColor(y), totals: mat[y] ? mat[y].t : [0,0,0,0,0,0,0,0,0,0,0,0] }; });
 
     function drillMonth(m1) {   // m1 = 1-12 — that month across every year
-      state.completedShowAll = false; state.completedYearOnly = null;
+      state.completedShowAll = false; state.completedYearOnly = null; state.completedSearch = "";   // a tap on the chart replaces any search
       state.completedMonth = (state.completedMonth === m1) ? null : m1;
       state.scrollCompletedList = state.completedMonth != null;
       router();
     }
     function drillYear(y) {     // one whole year
-      state.completedShowAll = false; state.completedMonth = null;
+      state.completedShowAll = false; state.completedMonth = null; state.completedSearch = "";
       state.completedYearOnly = (state.completedYearOnly === y) ? null : y;
       state.scrollCompletedList = state.completedYearOnly != null;
       router();
@@ -960,7 +965,7 @@
     var seg = el("div", "oseg");
     [["thisyear", "📊 This Year"], ["years", "📅 Years"], ["trend", "📈 Trend"], ["yoy", "🆚 Year vs Year"]].forEach(function (v) {
       var b = el("button", "oseg-btn" + (VIEW === v[0] ? " active" : ""), v[1]);
-      b.onclick = function () { if (VIEW === v[0]) return; state.revenueView = v[0]; state.completedMonth = null; state.completedYearOnly = null; router(); };
+      b.onclick = function () { if (VIEW === v[0]) return; state.revenueView = v[0]; state.completedMonth = null; state.completedYearOnly = null; state.completedSearch = ""; router(); };
       seg.appendChild(b);
     });
     root.appendChild(seg);
@@ -1032,22 +1037,55 @@
       root.appendChild(tbl);
     }
 
-    // ---- browsable list of every finished order (customer search lives on the home page) ----
-    state.completedSearch = "";
+    // ---- search every finished order: a name, a flavor, a color, a month — anything she wrote down ----
+    var cs = el("div", "ohomesearch ocompsearch");
+    var ci = el("input"); ci.type = "search";
+    ci.placeholder = "🔍  Search finished orders";
+    ci.setAttribute("autocapitalize", "off"); ci.setAttribute("autocorrect", "off");
+    ci.setAttribute("spellcheck", "false"); ci.setAttribute("enterkeyhint", "search");
+    ci.value = state.completedSearch || "";
+    cs.appendChild(ci);
+    cs.appendChild(el("div", "ohint2", "A name, a flavor, a month — any word on the order"));
+    root.appendChild(cs);
+
     var listWrap = el("div");
     root.appendChild(listWrap);
 
     var ALL = completedOrders().sort(function (a, b) { return a.eventDate < b.eventDate ? 1 : -1; }); // newest first
     var CAP = 60;
 
+    // lowercase, strip accents, drop apostrophes, turn other punctuation into spaces —
+    // so "marlas", "Smith," and "cafe" all still find "Marla's", "Smith" and "café"
+    function fold(s) {
+      return String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+        .replace(/['’‘]s\b/g, "").replace(/['’‘]/g, "").replace(/[^a-z0-9\s]/g, " ");   // "marla's" → "marla"
+    }
+    // everything on the order she could plausibly remember, incl. "March 2024" style date words
+    // and a digits-only copy of the phone so "5551234" matches "(555) 123-4567"
+    function haystack(o) {
+      return fold([o.name, o.what, o.aboutThem, o.cardMessage, o.avoid, o.address, o.handle, o.phone, o.email,
+        o.eventDate, o.eventDate ? monthLabel(o.eventDate.slice(0, 7)) : ""].filter(Boolean).join(" "))
+        + " " + String(o.phone || "").replace(/\D/g, "");
+    }
+
     function fillList() {
       listWrap.innerHTML = "";
       var q = (state.completedSearch || "").trim().toLowerCase();
       var list, header, capped = false;
 
+      var matchTotal = 0;
       if (q) {
-        list = ALL.filter(function (o) { return ((o.name || "") + " " + (o.what || "")).toLowerCase().indexOf(q) >= 0; });
-        header = list.length + " match" + (list.length === 1 ? "" : "es") + ' for "' + q + '"';
+        var words = fold(q).split(/\s+/).filter(Boolean);       // "wedding june" = both words, any order
+        list = ALL.filter(function (o) {
+          var h = haystack(o);
+          return words.every(function (w) {
+            var wd = w.replace(/\D/g, "");                        // a typed phone fragment matches the digits-only copy
+            return h.indexOf(w) >= 0 || (wd.length >= 3 && h.indexOf(wd) >= 0);
+          });
+        });
+        matchTotal = list.length;
+        if (!state.completedShowAll && matchTotal > CAP) { list = list.slice(0, CAP); capped = true; }   // "a" would match ~all 660
+        header = matchTotal + " finished order" + (matchTotal === 1 ? "" : "s") + ' match "' + q + '"';
       } else if (state.completedYearOnly) {
         list = ALL.filter(function (o) { return o.eventDate.slice(0, 4) === state.completedYearOnly; });
         var ytot = list.reduce(function (a, o) { return a + (grand(o) || 0); }, 0);
@@ -1067,7 +1105,11 @@
 
       var strip = el("div", "ostrip good");
       strip.appendChild(el("span", null, header));
-      if ((state.completedMonth || state.completedYearOnly) && !q) {
+      if (q) {
+        var clrq = el("button", null, "Clear");
+        clrq.onclick = function () { state.completedSearch = ""; ci.value = ""; fillList(); };
+        strip.appendChild(clrq);
+      } else if (state.completedMonth || state.completedYearOnly) {
         var clr = el("button", null, "Show all");
         clr.onclick = function () { state.completedMonth = null; state.completedYearOnly = null; router(); };
         strip.appendChild(clr);
@@ -1077,27 +1119,36 @@
       var curMonth = null, showMonthHeaders = !q; // group by month unless searching
       list.forEach(function (o) {
         if (showMonthHeaders) {
-          var mk = o.eventDate.slice(0, 7);
-          if (mk !== curMonth) { curMonth = mk; listWrap.appendChild(el("div", "omonth", monthLabel(mk).toUpperCase())); }
+          var mk = (o.eventDate || "").slice(0, 7);
+          if (mk !== curMonth) { curMonth = mk; listWrap.appendChild(el("div", "omonth", mk ? monthLabel(mk).toUpperCase() : "NO DATE")); }
         }
-        listWrap.appendChild(orderRow(o));
+        listWrap.appendChild(orderRow(o, { showDate: !!q }));   // no month headers while searching → year on every row
       });
 
-      if (!list.length) listWrap.appendChild(el("div", "oempty", "No finished orders match that."));
+      if (!list.length) listWrap.appendChild(el("div", "oempty", q ? "Nothing finished matches \"" + q + "\" — try one word, like a name or a flavor." : "No finished orders match that."));
       if (capped) {
-        var more = el("button", "obtn obtn-plain", "⌄ Show all " + ALL.length + " orders");
+        var more = el("button", "obtn obtn-plain", "⌄ Show all " + (q ? matchTotal + " matches" : ALL.length + " orders"));
         more.onclick = function () { state.completedShowAll = true; fillList(); };
         listWrap.appendChild(more);
       }
     }
 
+    var cdeb;
+    ci.addEventListener("input", function () {
+      state.completedSearch = ci.value;
+      state.completedShowAll = false;                           // a new query starts capped again
+      clearTimeout(cdeb); cdeb = setTimeout(fillList, 140);   // refill in place — never router(), so she keeps focus
+    });
+    // the keyboard's "Search" key just drops the keyboard — results are already live underneath
+    ci.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); ci.blur(); } });
     fillList();
 
     // after a drill tap, router() has already scrolled to the top; bring the filtered
     // list into view so the orders she asked for are what she sees (not the chart again)
     if (state.scrollCompletedList) {
       state.scrollCompletedList = false;
-      if (listWrap.firstChild) listWrap.scrollIntoView({ block: "start" });
+      var tgt = (state.completedSearch || "").trim() ? cs : listWrap;   // back from a search result → land on the box + her results
+      if (tgt.firstChild) tgt.scrollIntoView({ block: "start" });
     }
   }
 
@@ -1305,6 +1356,7 @@
       // remember exactly where she was in the orders list, so "back" returns her here
       // instead of resetting to today (e.g. she scrolled to March 2023 to find this order)
       if (location.hash === "#/orders") { state.ordersScrollY = window.scrollY; state.ordersRestoreScroll = true; }
+      state.detailFrom = (location.hash === "#/completed") ? "#/completed" : null;   // opened from Revenue → Back returns her there, search intact
       go("#/order/" + o.id);
     };
     return row;
@@ -1850,7 +1902,8 @@
   /* ================= DETAIL ================= */
   function renderDetail(o) {
     if (!o) { go("#/orders"); return; }
-    root.appendChild(topbar("Back to my orders", "#/orders"));
+    var fromRev = state.detailFrom === "#/completed";
+    root.appendChild(topbar(fromRev ? "Back to Revenue" : "Back to my orders", fromRev ? "#/completed" : "#/orders"));
     var d = el("div", "odetail");
 
     d.appendChild(el("h2", null, (o.name || "No name yet")));
@@ -2173,8 +2226,7 @@
       }).filter(Boolean).join("\n");
       o.totalCents = invoiceTotalCents(f);
     }
-    if (f.sigPhone) o.phone = f.sigPhone;
-    if (f.sigEmail) o.email = f.sigEmail;
+    // (sigPhone/sigEmail are HER signature contact on the invoice, not the customer's — never copy them onto the order)
     // the invoice's deposit line only ever becomes a real payment once, the first
     // time this invoice is generated — re-printing it later shouldn't double it up
     var depCents = parseMoney(f.deposit);
@@ -2766,7 +2818,9 @@
         var n = mergeIncoming(d.orders);
         CLOUD.lastPullAt = d.serverTime || CLOUD.lastPullAt;
         saveCloud();
-        if (n) router();
+        // never rebuild the screen under her keyboard (a search box or a form) — the next tap re-renders anyway
+        var typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+        if (n && !typing) router();
         return n;
       });
   }
@@ -2965,7 +3019,7 @@
     var p = h.split("/").filter(Boolean);
     if (!p.length) return null;                         // already home
     if (p[0] === "edit" && p[1]) return "#/order/" + p[1];
-    if (p[0] === "order") return "#/orders";
+    if (p[0] === "order") return state.detailFrom || "#/orders";   // swipe-back mirrors the Back button
     if (p[0] === "orders" && p[1]) return "#/orders";   // calendar -> list
     return "#/";
   }
@@ -3109,7 +3163,7 @@
   // ---- keep the home-screen app current (iOS standalone PWAs cache index.html hard, so
   //      new code never loads on its own). Poll a tiny no-store version.json; when a newer
   //      build is live, reload to a build-stamped URL that dodges the cache. ----
-  var BUILD = 31;  // keep in sync with version.json "build" AND the ?v= in index.html
+  var BUILD = 32;  // keep in sync with version.json "build" AND the ?v= in index.html
   var lastVerCheck = 0;
   function checkForUpdate() {
     var now = Date.now();
@@ -3120,7 +3174,7 @@
       .then(function (j) {
         if (!j || !j.build || j.build <= BUILD) return;
         if (location.search.indexOf("b=" + j.build) >= 0) return;    // already on this build — never loop
-        if (/^#\/(new|edit|invoice)/.test(location.hash || "")) return; // don't yank her out of typing
+        if (/^#\/(new|edit|invoice|completed)/.test(location.hash || "")) return; // don't yank her out of typing (forms, or a Revenue search)
         location.replace(location.pathname + "?b=" + j.build + (location.hash || "#/"));
       })
       .catch(function () { });
