@@ -227,6 +227,20 @@
     });
     return { value: value, count: count, outstanding: outstanding, unpriced: unpriced };
   }
+  // The same "today onward" money as futureBooked(), split by month — so the Coming Up
+  // number can be shown adding up. (The current month's slice is only what's still ahead;
+  // a month's own total elsewhere is the WHOLE month, which is why the two looked wrong.)
+  function futureByMonth() {
+    var t = todayISO(), by = {}, keys = [];
+    live().forEach(function (o) {
+      if (o.kind !== "order" || o.eventDate < t || o.tentative) return;
+      var g = grand(o); if (g == null) return;
+      var mk = monthKey(o.eventDate) || "?";   // an undated order still counts in the tile, so it must count here too
+      if (!by[mk]) { by[mk] = { mk: mk, value: 0, count: 0 }; keys.push(mk); }
+      by[mk].value += g; by[mk].count++;
+    });
+    return keys.sort().map(function (k) { return by[k]; });
+  }
   // Every month that has any order, newest first.
   function monthsWithOrders() {
     var seen = {};
@@ -458,7 +472,9 @@
   }
 
   /* ================= router ================= */
+  var lastRenderDay = null;   // the "today" the screen was last drawn for (Coming Up is date-based)
   function router() {
+    lastRenderDay = todayISO();
     var h = location.hash.replace(/^#/, "") || "/";
     var q = "", qi = h.indexOf("?");
     if (qi >= 0) { q = h.slice(qi + 1); h = h.slice(0, qi); }
@@ -652,7 +668,8 @@
 
     var n = live().filter(function (o) { return o.kind === "order"; }).length;
     var bList = el("button", "obtn obtn-plain", "📋  See all my orders" + (n ? "  (" + n + ")" : ""));
-    bList.onclick = function () { go("#/orders"); };
+    // "See ALL my orders" means all — drop any leftover Coming-up / overdue filter from an earlier tap
+    bList.onclick = function () { state.filter = null; state.monthFilter = null; go("#/orders"); };
     root.appendChild(bList);
 
     var bMoney = el("button", "obtn obtn-plain", "📊  Revenue");
@@ -763,6 +780,23 @@
     b.style.cursor = "pointer";
     b.onclick = function () { go("#/completed"); };
     b.appendChild(el("div", "ohero-tap", "See the charts ›"));
+
+    // show the Coming Up number adding up, month by month — the current month counts only
+    // what's still ahead ("rest of Nov"), which is why it's less than that month's full total
+    try {   // an explanatory line must never be able to take down the front door
+      var fbm = futureByMonth();
+      if (fbm.length > 1 || (fbm.length === 1 && fbm[0].mk === monthKey(todayISO()))) {
+        var curMk = monthKey(todayISO()), curYr = curMk.slice(0, 4), shown = fbm.slice(0, 4), later = fbm.slice(4);
+        var nb = function (s) { return s.replace(/ /g, " "); };   // keep each "Dec $9,865" together when the line wraps
+        var parts = shown.map(function (m) {
+          var nm = String(MONTHS[+String(m.mk).split("-")[1] - 1] || m.mk || "?").slice(0, 3);
+          if (/^\d{4}-/.test(m.mk) && m.mk.slice(0, 4) !== curYr) nm += " ’" + m.mk.slice(2, 4);   // next year's months say so
+          return nb((m.mk === curMk ? "rest of " + nm : nm) + " " + money(m.value));
+        });
+        if (later.length) parts.push(nb("later " + money(later.reduce(function (s, m) { return s + m.value; }, 0))));
+        box.appendChild(el("div", "ohero-note", "Coming up = " + parts.join(" + ")));
+      }
+    } catch (e) { console.warn("coming-up note skipped", e); }
 
     return box;
   }
@@ -982,9 +1016,14 @@
     function yearColor(y) { var i = yearsDesc.indexOf(y); return YEAR_PALETTE[(i < 0 ? 0 : i) % YEAR_PALETTE.length]; }
     var series = yearsDesc.map(function (y) { return { year: y, color: yearColor(y), totals: mat[y] ? mat[y].t : [0,0,0,0,0,0,0,0,0,0,0,0] }; });
 
-    function drillMonth(m1) {   // m1 = 1-12 — that month across every year
+    // m1 = 1-12. yr given (the "This Year" chart) = just that year's month, so the list matches the
+    // bar she tapped; yr omitted (Year vs Year) = that month across every year
+    function drillMonth(m1, yr) {
+      yr = yr || null;
+      var same = state.completedMonth === m1 && (state.completedMonthYear || null) === yr;
       state.completedShowAll = false; state.completedYearOnly = null; state.completedSearch = "";   // a tap on the chart replaces any search
-      state.completedMonth = (state.completedMonth === m1) ? null : m1;
+      state.completedMonth = same ? null : m1;
+      state.completedMonthYear = same ? null : yr;
       state.scrollCompletedList = state.completedMonth != null;
       router();
     }
@@ -1022,7 +1061,7 @@
       card.appendChild(el("div", "oyoy-hint", "👆 Tap a month to see those orders below"));
       var tyNonZero = series[0].totals.filter(function (v) { return v > 0; }).length;
       card.appendChild(barChart(MN.map(function (mn, mi) {
-        return { label: mn, value: series[0].totals[mi], selected: state.completedMonth === mi + 1, color: "#5c7a54", onClick: function () { drillMonth(mi + 1); } };
+        return { label: mn, value: series[0].totals[mi], selected: state.completedMonth === mi + 1, color: "#5c7a54", onClick: function () { drillMonth(mi + 1, curYear); } };
       }), { height: 196, slot: 28, maxBar: 19, hideValues: tyNonZero > 8 }));
       root.appendChild(card);
 
@@ -1136,9 +1175,10 @@
         var ytot = list.reduce(function (a, o) { return a + (grand(o) || 0); }, 0);
         header = "All of " + state.completedYearOnly + " — " + list.length + " order" + (list.length === 1 ? "" : "s") + " · " + money(ytot);
       } else if (state.completedMonth) {
-        list = ALL.filter(function (o) { return parseInt(o.eventDate.slice(5, 7), 10) === state.completedMonth; });
+        var my = state.completedMonthYear || null;   // set = one year's month (This Year chart); null = every year
+        list = ALL.filter(function (o) { return parseInt(o.eventDate.slice(5, 7), 10) === state.completedMonth && (!my || o.eventDate.slice(0, 4) === my); });
         var mtot = list.reduce(function (a, o) { return a + (grand(o) || 0); }, 0);
-        header = "Every " + MN[state.completedMonth - 1] + " — " + list.length + " order" + (list.length === 1 ? "" : "s") + " · " + money(mtot);
+        header = (my ? MONTHS[state.completedMonth - 1] + " " + my : "Every " + MN[state.completedMonth - 1]) + " — " + list.length + " order" + (list.length === 1 ? "" : "s") + " · " + money(mtot);
       } else if (state.completedShowAll) {
         list = ALL;
         header = "All " + ALL.length + " finished orders — newest first";
@@ -1219,6 +1259,12 @@
     box.appendChild(el("div", "otick-label", mName + " IS WORTH"));
     box.appendChild(el("div", "otick-big", money(st.worth)));
     box.appendChild(el("div", "otick-sub", st.count + " order" + (st.count === 1 ? "" : "s") + "  ·  " + money(st.paidSum) + " paid you"));
+    // the current month's "is worth" is the whole month; say how much of it is still ahead
+    if (mk === monthKey(todayISO())) {
+      var tk = todayISO(), ahead = 0;
+      st.all.forEach(function (o) { if (o.tentative || o.eventDate < tk) return; var g = grand(o); if (g != null) ahead += g; });
+      if (ahead > 0 && ahead < st.worth) box.appendChild(el("div", "otick-sub", money(ahead) + " of that is still coming up"));
+    }
 
     var tiles = el("div", "otick-tiles");
     var t1 = el("div", "otile" + (st.owed > 0 ? " amber" : ""));
@@ -1294,11 +1340,34 @@
       var unfinished = group.filter(function (o) { return !o.done && o.kind === "order"; }).length;
       var head = el("div", "omonth" + (isPast && unfinished ? " warn" : ""));
       head.appendChild(el("span", null, monthLabel(mk).toUpperCase()));
-      var st = monthStats(mk);
+      // The header's dollars are the rows actually listed under it (same rules as the Coming
+      // Up tile: priced + not tentative). It used to be the WHOLE month even in a filtered
+      // view — so "Coming up" showed November's full total above only its remaining orders.
+      var gWorth = 0, gSoFar = 0, gAhead = 0, gOwed = 0, gTent = 0;
+      var owedView = state.filter === "overdue" || state.filter === "owed";
+      group.forEach(function (o) {
+        if (o.kind !== "order") return;
+        var g = grand(o); if (g == null) return;
+        if (owedView) gOwed += Math.max(0, g - paid(o));   // same rule as the red "owes you" strip above the list
+        if (o.tentative) { gTent++; return; }
+        gWorth += g;
+        if (o.eventDate < today) gSoFar += g; else gAhead += g;
+      });
+      var st = { worth: gWorth };
       var nOrders = group.filter(function (o) { return o.kind === "order"; }).length;
-      var sum = el("span", "osum", nOrders + " order" + (nOrders === 1 ? "" : "s") + (st.worth ? " · " + money(st.worth) : ""));
+      // in the "still owe you" views the header is what's OWED (so it adds up to the strip);
+      // everywhere else it's what the listed orders are worth, flagging any not-confirmed ones left out
+      var hdrMoney = owedView ? (gOwed ? " · " + money(gOwed) + " owed" : "")
+        : (st.worth ? " · " + money(st.worth) : "") + (gTent ? " (+" + gTent + " not confirmed)" : "");
+      var sum = el("span", "osum", nOrders + " order" + (nOrders === 1 ? "" : "s") + hdrMoney);
       head.appendChild(sum);
       wrap.appendChild(head);
+      // this month, whole-month view: spell out how the total splits around today, so it
+      // visibly squares with the "Coming Up" number on the home screen
+      if (mk === monthKey(today) && !state.filter && gSoFar > 0 && gAhead > 0) {
+        // split by DATE (before today / today onward) — exactly how the Coming Up tile counts
+        wrap.appendChild(el("div", "omonth-split", (money(gSoFar) + " before today").replace(/ /g, " ") + "  ·  " + (money(gAhead) + " from today on").replace(/ /g, " ")));
+      }
 
       var body = el("div");
       if (isPast && !unfinished && !state.filter) {
@@ -3232,7 +3301,7 @@
   // ---- keep the home-screen app current (iOS standalone PWAs cache index.html hard, so
   //      new code never loads on its own). Poll a tiny no-store version.json; when a newer
   //      build is live, reload to a build-stamped URL that dodges the cache. ----
-  var BUILD = 33;  // keep in sync with version.json "build" AND the ?v= in index.html
+  var BUILD = 34;  // keep in sync with version.json "build" AND the ?v= in index.html
   var lastVerCheck = 0;
   function checkForUpdate() {
     var now = Date.now();
@@ -3249,7 +3318,14 @@
       .catch(function () { });
   }
   checkForUpdate();
-  document.addEventListener("visibilitychange", function () { if (!document.hidden) checkForUpdate(); });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) return;
+    checkForUpdate();
+    // reopened on a later day than the screen was drawn for? redraw, so "Coming Up" and the lists
+    // agree on what "today" is — but never under her keyboard or in the middle of a form
+    var typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+    if (lastRenderDay && lastRenderDay !== todayISO() && !typing && !/^#\/(new|edit|invoice)/.test(location.hash || "")) router();
+  });
   window.addEventListener("focus", checkForUpdate);
 
   window.addEventListener("hashchange", function () { router(); });

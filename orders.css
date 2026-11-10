@@ -299,6 +299,7 @@ body{
   text-transform:uppercase; color:var(--o-muted); display:flex; align-items:center; gap:8px;
 }
 .omonth .osum{margin-left:auto; letter-spacing:0; text-transform:none; font-size:14px; font-weight:700}
+.omonth-split{font-size:14px; font-weight:700; color:var(--o-ink-2); padding:0 4px 10px; margin-top:-2px}
 .omonth.collapsed{cursor:pointer}
 .omonth.warn{color:var(--o-amber)}
 
